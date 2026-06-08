@@ -1,0 +1,19 @@
+{
+  "name": "plan-agent",
+  "description": "Plan creation and review on demand — /plan-agent:implementation-plan skill runs the full Steps 1-8 workflow with a built-in structured interview; /plan-agent:review-plan skill spawns an Agent Team (5 core + 2 UI-conditional reviewers) to review, improve, and update implementation plans in place; /plan-agent:finalize-plan skill checks completion evidence and sets status; plans-library generates a filterable HTML gallery; filename hook enforces verb-target kebab-case",
+  "author": {
+    "name": "Agentics Project"
+  },
+  "license": "MIT",
+  "keywords": [
+    "planning",
+    "plan-agent",
+    "planning",
+    "on-demand",
+    "conventions",
+    "filename-validation",
+    "workflow"
+  ],
+  "homepage": "https://github.com/shawn-sandy/agentics/tree/main/kit/plugins/plan-agent",
+  "repository": "https://github.com/shawn-sandy/agentics"
+}
