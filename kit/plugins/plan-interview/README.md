@@ -288,7 +288,7 @@ it in another repo:
 1. Install the plugin:
 
 ```
-/plugin marketplace add shawn-sandy/agentics
+/plugin marketplace add shawn-sandy/agentics-kit
 /plugin install plan-interview@agentics-kit
 ```
 

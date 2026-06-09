@@ -12,6 +12,6 @@
     "optimization",
     "best-practices"
   ],
-  "homepage": "https://github.com/shawn-sandy/agentics/tree/main/kit/plugins/memory-tools",
-  "repository": "https://github.com/shawn-sandy/agentics"
+  "homepage": "https://github.com/shawn-sandy/agentics-kit/tree/main/kit/plugins/memory-tools",
+  "repository": "https://github.com/shawn-sandy/agentics-kit"
 }

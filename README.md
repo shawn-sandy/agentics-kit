@@ -1,5 +1,7 @@
 # agentics
 
+[![Publish dist](https://github.com/shawn-sandy/agentics/actions/workflows/publish-dist.yml/badge.svg)](https://github.com/shawn-sandy/agentics/actions/workflows/publish-dist.yml)
+
 A **marketplace system for Claude Code plugins** — enabling discovery, distribution, and installation of AI-powered plugins that extend Claude's capabilities across code review, planning, testing, git workflows, accessibility, and more.
 
 **Marketplace:** `agentics-kit` v4.0.0 · **12 plugins** · Requires Claude Code 1.0.33+ · [View all plugins](#plugin-reference-table) · [Browse docs](https://shawn-sandy.github.io/agentics/)
@@ -64,8 +66,8 @@ A **marketplace system for Claude Code plugins** — enabling discovery, distrib
 **Or load any plugin directly for local testing:**
 
 ```bash
-git clone https://github.com/shawn-sandy/agentics.git
-cd agentics
+git clone https://github.com/shawn-sandy/agentics-kit.git
+cd agentics-kit
 claude --plugin-dir ./kit/plugins/code-review
 # Then ask: "Review this code for issues"
 ```
@@ -169,7 +171,7 @@ The marketplace approach uses sparse cloning — only the plugin you install is 
 **Step 1: Register the marketplace**
 
 ```
-/plugin marketplace add shawn-sandy/agentics
+/plugin marketplace add shawn-sandy/agentics-kit
 ```
 
 **Step 2: Install individual plugins**
@@ -201,7 +203,7 @@ This repo ships these keys in **project scope** (`.claude/settings.json`). On fi
 {
   "extraKnownMarketplaces": {
     "agentics-kit": {
-      "source": { "source": "github", "repo": "shawn-sandy/agentics" }
+      "source": { "source": "github", "repo": "shawn-sandy/agentics-kit" }
     }
   },
   "enabledPlugins": {
@@ -223,7 +225,7 @@ This repo ships these keys in **project scope** (`.claude/settings.json`). On fi
 
 > This config lives in `settings.json`, **not** `CLAUDE.md`. `enabledPlugins` is an object (`"name@agentics-kit": true`), not an array. Merge these keys into any existing settings rather than overwriting the file.
 
-> **Heads-up on first run and web sessions:** the marketplace add is gated by a one-time trust/consent prompt. In a non-interactive context (such as a fresh Claude Code on the web session that can't answer prompts or run `/plugin`), the kit may not load until that prompt is accepted. If a session doesn't pick up the plugins, accept the trust prompt or run `/plugin marketplace add shawn-sandy/agentics` once.
+> **Heads-up on first run and web sessions:** the marketplace add is gated by a one-time trust/consent prompt. In a non-interactive context (such as a fresh Claude Code on the web session that can't answer prompts or run `/plugin`), the kit may not load until that prompt is accepted. If a session doesn't pick up the plugins, accept the trust prompt or run `/plugin marketplace add shawn-sandy/agentics-kit` once.
 
 See the full team setup guide — including scope choices and caveats — in [docs/plugin-auto-load-setup.md](./docs/plugin-auto-load-setup.md).
 
@@ -232,8 +234,8 @@ See the full team setup guide — including scope choices and caveats — in [do
 Clone the repo and load any plugin directly with `--plugin-dir`:
 
 ```bash
-git clone https://github.com/shawn-sandy/agentics.git
-cd agentics
+git clone https://github.com/shawn-sandy/agentics-kit.git
+cd agentics-kit
 
 # Load a single plugin (starts an interactive Claude session)
 claude --plugin-dir ./kit/plugins/code-review
@@ -759,8 +761,8 @@ The following plugins have been removed from the `agentics-kit` marketplace as o
 Their source directories are retained in the repository as reference implementations. You can still load any of them locally with `--plugin-dir`:
 
 ```bash
-git clone https://github.com/shawn-sandy/agentics.git
-cd agentics
+git clone https://github.com/shawn-sandy/agentics-kit.git
+cd agentics-kit
 claude --plugin-dir ./kit/plugins/<plugin-name>
 ```
 

@@ -12,6 +12,6 @@
     "best-practices",
     "complexity"
   ],
-  "homepage": "https://github.com/shawn-sandy/agentics/tree/main/kit/plugins/code-review",
-  "repository": "https://github.com/shawn-sandy/agentics"
+  "homepage": "https://github.com/shawn-sandy/agentics-kit/tree/main/kit/plugins/code-review",
+  "repository": "https://github.com/shawn-sandy/agentics-kit"
 }

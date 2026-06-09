@@ -4,6 +4,6 @@
   "author": { "name": "Agentics Project" },
   "license": "MIT",
   "keywords": ["git", "branch", "checkout", "commit", "pr", "pull-request", "conventional-commits", "automation"],
-  "homepage": "https://github.com/shawn-sandy/agentics/tree/main/kit/plugins/git-agent",
-  "repository": "https://github.com/shawn-sandy/agentics"
+  "homepage": "https://github.com/shawn-sandy/agentics-kit/tree/main/kit/plugins/git-agent",
+  "repository": "https://github.com/shawn-sandy/agentics-kit"
 }

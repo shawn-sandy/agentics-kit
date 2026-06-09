@@ -23,6 +23,6 @@
     "social-config",
     "share-init"
   ],
-  "homepage": "https://github.com/shawn-sandy/agentics/tree/main/kit/plugins/social-media-tools",
-  "repository": "https://github.com/shawn-sandy/agentics"
+  "homepage": "https://github.com/shawn-sandy/agentics-kit/tree/main/kit/plugins/social-media-tools",
+  "repository": "https://github.com/shawn-sandy/agentics-kit"
 }

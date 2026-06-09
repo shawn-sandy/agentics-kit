@@ -4,6 +4,6 @@
   "author": { "name": "Agentics Project" },
   "license": "MIT",
   "keywords": ["review", "panel", "product-plan", "prd", "agent-team", "multi-reviewer", "ux", "accessibility"],
-  "homepage": "https://github.com/shawn-sandy/agentics/tree/main/kit/plugins/product-plans",
-  "repository": "https://github.com/shawn-sandy/agentics"
+  "homepage": "https://github.com/shawn-sandy/agentics-kit/tree/main/kit/plugins/product-plans",
+  "repository": "https://github.com/shawn-sandy/agentics-kit"
 }
