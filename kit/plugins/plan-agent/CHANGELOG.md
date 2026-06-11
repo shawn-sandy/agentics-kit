@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.1.0 — Findings walkthrough and --skip-analysis flag for review-plan (2026-06-10)
+
+### Added
+
+- **Step 6b — Walkthrough & Analysis** — new `review-plan` workflow step inserted between synthesis (Step 6) and integration (Step 7). Instead of silently auto-applying every synthesized edit, the skill now offers an interactive walkthrough of the findings before anything is written into the plan.
+- **Ask-first gate** — Step 6b opens with an `AskUserQuestion` gate offering `Walk through findings` (the default), `Apply all`, and `Review only`. Declining via `Review only` applies nothing but still appends the Team Review to the plan.
+- **Per-finding triage** — during the walkthrough each finding is triaged `Accept` / `Modify` / `Reject`, batched at most 4 findings per prompt. `Modify` selections are deferred and collected into a single post-walkthrough edit pass instead of interrupting the walkthrough one finding at a time.
+- **`--skip-analysis` flag** — bypasses the gate and the walkthrough entirely, preserving the previous auto-apply behavior in one shot.
+- **`--triage-top <N>` flag** — individually triages only the `N` highest-risk findings and batch-accepts the rest, keeping the walkthrough short on large reviews.
+- **Background mode implies `--skip-analysis`** — unattended `--background` runs never block on the gate or triage prompts.
+- **Source / Rationale column and Triage Outcome subsection** — the synthesis template's (`references/output-template.md`) **Inline Edits to Apply** table gains a Source / Rationale column (originating reviewer plus why), with a Triage Outcome subsection placeholder beneath it for Step 7 Pass 2 to fill.
+- **README documentation** — the plan-agent README now documents the `--skip-analysis` flag and the findings walkthrough.
+
+### Changed
+
+- **Step 7 Pass 1** — consumes `accepted_edits` when the walkthrough ran; the full-table fallback fires only for `--skip-analysis`, background mode, or the `Apply all` gate choice.
+- **Step 7 Pass 2** — the appended Team Review now records triage outcomes (accepted / modified with revised content / rejected), and the Team Review is always appended even in review-only mode.
+
+---
+
+## 2.0.0 — Rename craft-prompt skill to refine-prompt (2026-06-10)
+
+### Breaking
+
+- **`craft-prompt` → `refine-prompt`** — the prompt-crafting skill is renamed to match its originating plan (`docs/plans/create-prompt-refiner-skill.html`). Invocation changes from `/plan-agent:craft-prompt` to `/plan-agent:refine-prompt`; the skill directory moves from `skills/craft-prompt/` to `skills/refine-prompt/`. Phases, interview flow, technique matrix, and templates are unchanged.
+
+---
+
+## 1.11.1 — Complete craft-prompt README documentation (2026-06-10)
+
+### Fixed
+
+- **README `craft-prompt` section** — the overview now hyperlinks [Anthropic's official Claude Prompting Best Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) guide (previously mentioned with no URL); the usage block gains a Before/After example showing a vague request ("write me a prompt to summarize stuff") transformed into the structured XML-layered prompt the skill produces; and a technique-matrix table (mirroring `skills/craft-prompt/SKILL.md`) now maps each prompt type (`system`, `task`, `creative`, `analytical`) to the best-practices techniques it applies.
+
+---
+
 ## 1.11.0 — Review option in the plan exit step (2026-06-09)
 
 ### Added
