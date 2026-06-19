@@ -1,5 +1,50 @@
 # Changelog
 
+## 2.7.0 — setup-sites skill: scaffold GitHub Pages publishing into any repo (2026-06-18)
+
+### Added
+
+- **`setup-sites` skill** — `/plan-agent:setup-sites` (command **or** model-invocable) scaffolds the GitHub Pages deploy pipeline into the current repo so anything generated under `docs/` (plan galleries, social cards, any static HTML) reaches a public URL. It drops four idempotent artifacts — `.github/workflows/deploy-pages.yml` (SHA-pinned, path-filtered to `docs/**`), `docs/.nojekyll`, a parameterized landing hub `docs/index.html`, and `scripts/serve-docs.sh` for local preview — never clobbering files that already exist. The skill computes the live `https://<owner>.github.io/<repo>/` URL from the `origin` remote (handling user/org root sites), warns when `plansDirectory` points outside `docs/` (where Pages can't see it) and seeds `docs/plans/` (with a committed `.gitkeep`) when it's unset so the first generated plan lands inside `docs/` and deploys instead of falling back to the Claude user plans folder, prunes hub cards for galleries the repo doesn't use, and guides the one-time **Settings → Pages → Source → GitHub Actions** step (optionally via `gh` after confirmation). Closes the gap where the deploy pipeline existed only as hand-wired infrastructure in the agentics repo and could not be reused elsewhere.
+- **Scaffold templates** — `templates/pages/{deploy-pages.yml,hub.html,serve-docs.sh}` ship the three file templates the skill copies; the hub carries `{{SITE_TITLE}}`/`{{SITE_TAGLINE}}`/`{{SITE_FOOTER}}` placeholders and `<!-- CARD:plans -->` / `<!-- CARD:social -->` prune markers.
+- **Tests** — `tests/plugins/test-setup-sites.sh` guards the frontmatter contract, the three-part ≤200-char description, `allowed-tools`, body line count < 500, the seven-step workflow, all three templates (SHA-pinning + `.nojekyll` assertion + `docs/` upload in the workflow; card markers + placeholders + no absolute-root links in the hub), and a **dynamic** marketplace version check (plan-agent > `origin/main`).
+
+---
+
+## 2.6.0 — Outcome-driven goal prompt on every HTML plan (2026-06-18)
+
+### Added
+
+- **Goal prompt** — every generated plan now carries a third copy-paste prompt alongside the implement and workflow prompts: an *outcome-driven* prompt that frames the work as a goal to achieve (`Achieve this goal: … — use the plan as reference, but optimize for the outcome`) rather than steps to execute, giving the implementer latitude to deviate when a better path to the same outcome exists. Rendered as a collapsible `.plan-goal` `<details>` (purple accent) immediately below the implement row, mirrored in an always-present `<meta name="plan-goal">` tag, and computed in Step 2 from the same condensed objective + plan path + digest-extraction one-liner as the implement prompt. Unlike the workflow prompt it is **always present** — no flag, no complexity heuristic. Carries the same digest-extraction clause so the pursuing agent reads the spec digest, not the full ~21k styled HTML.
+
+### Changed
+
+- **`reference/SKELETON.html`** — adds the `.plan-goal` markup block, its CSS (reusing the existing `--purple` design tokens), the `copyGoal()` clipboard helper, and the `<meta name="plan-goal">` head tag. Hidden when `data-status="completed"` and suppressed in print, exactly like the implement and workflow rows.
+- **`implementation-plan` SKILL.md** — Step 2 computes `{goal-prompt}`; Step 3 always emits the `plan-goal` meta tag; HTML Output Requirements list `plan-goal` among the always-present meta tags and document the always-present `.plan-goal` element.
+- **Tests** — `tests/plugins/test-goal-prompt.sh` pins the goal prompt to the skeleton (meta tag, markup, `copyGoal()`, CSS, completed/print hiding) and the SKILL.md contract so the feature cannot silently regress.
+
+---
+
+## 2.5.1 — Backfill version + changelog for the #328 description optimization (2026-06-18)
+
+### Changed
+
+- **Skill descriptions optimized to the three-part ≤200-char format** — backfills the version bump and changelog entry that should have accompanied PR #328, which rewrote the `implementation-plan` and `refine-prompt` skill frontmatter `description:` fields to the canonical `[short ≤80 chars] [capability] Use when…` shape. No behavior change; metadata/discovery only.
+
+---
+
+## 2.5.0 — build-proposal skill: turn a vague idea into a decision-complete proposal (2026-06-18)
+
+### Added
+
+- **`build-proposal` skill** — `/plan-agent:build-proposal <idea>` (command **or** model-invocable) turns a half-formed idea into a decision-complete proposal. It codifies an 8-step research→decide→author loop (Frame → Fan out research → Synthesize core finding → Separate facts from decisions → Resolve decisions → Author artifact → Deepen → Converge & hand off), a **Tier 0/1/2 right-sizing gate** so small ideas never get a 10-section doc, and the canonical proposal-artifact shape. It writes a living `docs/proposals/<slug>.md` and stops at the planning handoff — the seam is "should-we + what" (build-proposal) vs. "how" (`implementation-plan`).
+- **Artifact-dir resolver** — resolves the proposals directory `--dir` → `planAgent.proposalsDirectory` → `docs/proposals/` → default Claude user folder (mirroring how `implementation-plan` resolves `plansDirectory`) and `mkdir -p`s it at runtime. A committed `docs/proposals/.gitkeep` seeds the default root.
+- **Ambient-activation discipline** — the three-part ≤200-char description triggers on idea / "should-we" / compare-and-align intent and shares **no trigger phrase** with `implementation-plan` (which owns "plan document / write a plan file"), so the two never collide on the model-invocation path.
+- **References (progressive disclosure)** — `references/artifact-shape.md` (canonical section order + skeleton) and `references/operating-principles.md` (the ten operating principles + the relationship-to-existing-capabilities map, with `deep-research` wired as an **optional** delegate behind a WebSearch/WebFetch + Explore fallback — never a hard dependency).
+- **Worked-example corpus** — two trimmed, real proposals ship flat under `references/` (`example-design-md-spec-alignment.md` — Tier 2; `example-proposal-builder-skill.md` — the recursive case), each stamped with its source URL + commit SHA/date as a built-in regression corpus.
+- **Tests** — `tests/plugins/test-build-proposal.sh` guards the frontmatter contract, the three-part ≤200-char description, the no-trigger-overlap-with-implementation-plan rule, body line count < 500, reference + exemplar resolution, and a **dynamic** marketplace version check (plan-agent > `origin/main`, not a hardcoded 2.4.1).
+
+---
+
 ## 2.4.1 — Responsive CSS retrofit for every HTML plan (2026-06-12)
 
 ### Added

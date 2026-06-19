@@ -21,12 +21,14 @@ Installers get on-demand planning with argument support, issue ingestion, built-
 | Component | Type | Activation |
 |-----------|------|-----------|
 | `implementation-plan` | Skill | Command (`/plan-agent:implementation-plan <objective>`) or auto-activates on plan-document intent |
+| `build-proposal` | Skill | Command (`/plan-agent:build-proposal <idea>`) or auto-activates on idea / "should-we" / compare-and-align intent |
 | `review-plan` | Skill | Manual only — invoke as `/plan-agent:review-plan [plan-path]` or auto-activates when you ask to review a plan (requires Agent Teams) |
 | `review-plan-bg` | Command | Background dispatcher — invoke as `/plan-agent:review-plan-bg <path>` to run the review team without blocking |
 | `finalize-plan` | Skill (`disable-model-invocation`) | Manual only — invoke as `/plan-agent:finalize-plan [plan-filename.html]` |
 | `refine-prompt` | Skill (`disable-model-invocation`) | Manual only — invoke as `/plan-agent:refine-prompt [intent]` |
 | `plans-library` | Skill | Auto-activates on "browse plans", "view plan history", "open plans index" intent |
 | `plans-open` | Skill | Auto-activates on "open the gallery", "show the plans page" — opens without rebuilding |
+| `setup-sites` | Skill | Command (`/plan-agent:setup-sites`) or auto-activates on "set up / publish GitHub Pages" intent — scaffolds the deploy pipeline into any repo |
 | `validate-plan-filename` | Hook (`PostToolUse`) | Fires automatically on every `Write`/`Edit` — validates plan filenames |
 | `rebuild-plans-index` | Hook (`PostToolUse`) | Fires on `Write`/`Edit`/`MultiEdit` to non-index `.html` plans — auto-regenerates gallery |
 
@@ -130,6 +132,7 @@ Every plan is a single self-contained `.html` file (no CDN links, no external as
 - **Status badge** — colour-coded: grey = todo, amber = in-progress, green = completed
 - **Objective card** — prominent highlighted block at the top
 - **Implement prompt** — Copy button produces a concise action-oriented prompt with plan status, step/criteria progress counts, and numbered instructions to implement directly from the plan file
+- **Goal prompt** *(expandable)* — collapsible "Pursue as goal" section that reveals an outcome-driven prompt ("Achieve this goal: … — use the plan as reference, but optimize for the outcome"), giving the implementer latitude to deviate from the steps when a better path to the same outcome exists. **Always present** — every plan gets one, no flag required. Carries the same digest-extraction clause as the implement prompt
 - **Workflow prompt** *(expandable)* — collapsible "Run as workflow" section that reveals a copy-paste prompt for parallel subagent orchestration via `/workflows`. Generated automatically for complex plans (5+ files across 3+ directories, repetitive per-file changes, parallelizable steps, or adversarial review needs) or explicitly with `--workflow`
 - **Step cards** — numbered, each with an expandable *Verify* disclosure
 - **Interactive checkboxes** — acceptance criteria the user can tick in the browser, with a live progress bar
@@ -301,6 +304,17 @@ open the plans gallery
 show the plans page
 ```
 
+#### `setup-sites` — Command or auto-activate
+
+Scaffolds the GitHub Pages deploy pipeline into the **current repo** so anything generated under `docs/` (plan galleries, social cards, any static HTML) publishes to a public URL. Drops four idempotent artifacts — `.github/workflows/deploy-pages.yml`, `docs/.nojekyll`, a parameterized landing hub `docs/index.html`, and `scripts/serve-docs.sh` — without clobbering files that already exist. Computes the live `https://<owner>.github.io/<repo>/` URL from the `origin` remote, warns when `plansDirectory` points outside `docs/`, and guides the one-time **Settings → Pages → Source → GitHub Actions** step. It scaffolds and verifies only — you commit and push when ready.
+
+Invoke explicitly via `/plan-agent:setup-sites`, or let it auto-activate:
+
+```
+set up GitHub Pages for this repo
+publish my plans to GitHub Pages
+```
+
 ### Hooks
 
 #### Filename validation (automatic)
@@ -377,6 +391,13 @@ plan-agent/
       reference/
         SKELETON.html       — Default full-plan HTML template
         SKELETON.md         — Markdown skeleton reference
+    build-proposal/
+      SKILL.md              — Idea→proposal loop (Tier gate, 8 steps, artifact resolver)
+      references/
+        artifact-shape.md             — Canonical proposal-artifact template
+        operating-principles.md       — Ten principles + capability map
+        example-design-md-spec-alignment.md   — Trimmed Tier 2 worked exemplar
+        example-proposal-builder-skill.md     — Trimmed recursive worked exemplar
     review-plan/
       SKILL.md              — Agent Team review workflow (supports --background)
       references/
@@ -388,6 +409,8 @@ plan-agent/
       SKILL.md              — Gallery scan/parse/render workflow
     plans-open/
       SKILL.md              — Open existing gallery without rebuild
+    setup-sites/
+      SKILL.md              — Scaffold the GitHub Pages deploy pipeline into any repo
   agents/
     plan-reviewer-*.md      — Seven reviewer agent definitions (5 core + 2 UI-conditional)
     agent-review-plan.md    — Background agent for fire-and-forget review
@@ -395,6 +418,10 @@ plan-agent/
     review-plan-bg.md       — Background review dispatcher command
   templates/
     plans-gallery.html      — Static gallery template (substituted by plans-library)
+    pages/
+      deploy-pages.yml      — GitHub Pages deploy workflow (SHA-pinned)
+      hub.html              — Parameterized landing-hub template (setup-sites)
+      serve-docs.sh         — Local docs/ preview server (setup-sites)
   hooks/
     validate-plan-filename.py  — PostToolUse filename enforcement script
     rebuild-plans-index.py     — PostToolUse gallery index auto-rebuild
@@ -416,6 +443,25 @@ Command-invocable via `/plan-agent:implementation-plan <objective>` and model-in
 - **Required Structure** — context, objective, steps (with per-step *why*/*verify*), acceptance criteria, verification, next-steps (with Wish List), unresolved-questions
 - **Writing Style** — direct, imperative, developer-friendly; HTML-escapes all user-supplied content
 - **Skeleton reference** — points to `reference/SKELETON.html` (only supported template; `minimal`, `adr`, and `spike` are planned)
+
+### `build-proposal` Skill
+
+Command-invocable via `/plan-agent:build-proposal <idea>` and model-invocable on idea / "should-we" / compare-and-align intent. It is the **upstream** layer to `implementation-plan`: it decides *should-we + what* and hands off the *how*. Its three-part description shares no trigger phrase with `implementation-plan`, so the two never collide on the model-invocation path.
+
+- **Right-sizing triage** — Step 1 picks a **Tier**: Tier 0 (answer directly, no loop), Tier 1 (one research pass, short proposal), Tier 2 (full 8-step loop + canonical artifact). The tier escalates or de-escalates as research reveals scope.
+- **8-step loop** — Frame → Fan out research (parallel) → Synthesize the core finding → Separate facts from decisions → Resolve decisions (recommendation-first) → Author the artifact → Deepen on request → Converge & hand off. Step 0 self-bootstraps out of plan mode.
+- **Artifact-dir resolution** — `--dir` → `planAgent.proposalsDirectory` (project then global settings) → `docs/proposals/` → default Claude user folder; `mkdir -p`s the resolved dir and writes `<slug>.md`. A committed `docs/proposals/.gitkeep` seeds the default.
+- **`deep-research` is optional** — the web-research phase can delegate to the `deep-research` skill when available, falling back to `WebSearch`/`WebFetch` + `Agent` (`Explore`) breadth otherwise. No hard dependency.
+- **References (one level deep)** — `references/artifact-shape.md` (canonical section order + skeleton), `references/operating-principles.md` (ten principles + capability map), and two trimmed worked exemplars (`example-design-md-spec-alignment.md`, `example-proposal-builder-skill.md`) stamped with source URL + commit SHA/date.
+- **Handoff** — at convergence it stops and points to `/plan-agent:implementation-plan author an execution plan from the proposal at docs/proposals/<slug>.md`. It leads with an objective rather than a bare `.md` token: a bare token triggers `implementation-plan`'s 1:1 conversion mode (which maps `Changes/Steps` → step cards), and a proposal has only `Workstreams`/`Roadmap` — so leading with the objective keeps the full planning pass that drafts real, actionable steps.
+
+Usage:
+
+```text
+/plan-agent:build-proposal should we adopt DESIGN.md for our component tokens
+/plan-agent:build-proposal compare our state management to Zustand and align
+/plan-agent:build-proposal --dir docs/rfcs how would we add offline support
+```
 
 ### `finalize-plan` Skill
 
