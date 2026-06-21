@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.8.1 — Standardize plans-directory resolution across all skills (2026-06-20)
+
+### Fixed
+
+- **Writer/reader directory mismatch** — `implementation-plan` resolved its output directory with vague prose ("the configured `plansDirectory` if set") that never named the read source or precedence and carried an extra "default Claude user plans folder" rung the reader skills lack. When a project set `plansDirectory` (e.g. `docs/planning`), it could write HTML to a different directory than `plans-library`/`plans-open` scan — so generated plans never appeared in the gallery.
+- **`finalize-plan` latent bug** — `$PLANS_DIR` was used by the "most recent plan" search but never defined; it now resolves via the canonical snippet.
+
+### Changed
+
+- **One canonical resolution everywhere** — every plan-agent skill that resolves the plans (or proposals) directory now follows Claude Code's settings precedence: project-local `.claude/settings.local.json` → project `.claude/settings.json` → global `~/.claude/settings.json`, falling back to `${PWD}/docs/plans` (or `${PWD}/docs/proposals`). The vague-prose, project-only, and two-tier variants are gone, so the writer and every reader resolve the same directory. Touched: `implementation-plan`, `plans-library`, `plans-open`, `finalize-plan`, `build-proposal`, `setup-sites`, and the README artifact-dir description.
+- **`setup-sites`** — updated the prose/comments describing the removed "Claude user plans folder (outside the repo)" fallback; the first plan now always lands in `${PWD}/docs/plans`.
+
+## 2.8.0 — Compute-on-read plan spec extractor replaces the embedded digest (2026-06-20)
+
+### Changed
+
+- **Compute-on-read spec** — retired the embedded `#plan-digest` cache in favor of `scripts/extract-plan-spec.mjs`, which derives the spec from the visible plan DOM on demand. The visible DOM is now the single source of truth: no denormalized cache, no manual "refresh the digest" obligation, and no closing-script escaping contract on the write path. New plans embed nothing. Because each plan is a self-contained HTML file, the implement, goal, and workflow prompts it ships reference the plan **by path** (Claude reads the HTML directly) — no dependency on a repo-local script in the target repo, so generated plans work for any plugin user. The review team (`review-plan` SKILL, all seven reviewer briefs, and all seven `plan-reviewer-*` agent defs) reads via the extractor with a full-HTML fallback, and the `review-plan` "Pass 1b — Refresh the digest" pass is removed.
+- **Backward compatible** — the extractor is embedded-first: legacy plans that still carry a `<script type="text/markdown" id="plan-digest">` block are read from it verbatim (un-guarded to clean markdown), so existing `docs/plans/*.html` are untouched. `scripts/backfill-plan-digests.mjs` is retained to re-seed legacy embedded plans.
+- **Shared library** — the parse/build helpers (`hasDigest`, `decodeEntities`, `extractSections`, `buildDigest`, `guardScriptClose`, the new `unguardScriptClose`, and `readEmbeddedDigest`) moved to `scripts/lib/plan-spec.mjs`, shared by the write-side backfill and the read-side extractor.
+
+### Added
+
+- **`scripts/extract-plan-spec.mjs`** — CLI spec extractor: embedded-first, DOM-derive fallback; exits non-zero on missing/unparseable input.
+- **`tests/plugins/test-extract-plan-spec.mjs`** — objective round-trip (embedded → un-guarded spec; digest-free → DOM-derived) plus unit coverage for resolution precedence, un-guarding without stopping early, the shared-lib import, and CLI exit codes.
+
+### Caveat
+
+- New plans embed no digest, so the old `awk '…id="plan-digest"…'` one-liner returns **empty** on them — use `node scripts/extract-plan-spec.mjs <plan>` instead.
+
+### Notes
+
+- `tests/plugins/test-plan-digest.sh` renamed to `tests/plugins/test-extractor-wiring.sh` and rewritten to assert extractor wiring; `tests/plugins/test-backfill-digest.mjs`'s real-corpus assertion scoped so committed digest-free plans don't fail the retained injector.
+
+---
+
 ## 2.7.0 — setup-sites skill: scaffold GitHub Pages publishing into any repo (2026-06-18)
 
 ### Added
