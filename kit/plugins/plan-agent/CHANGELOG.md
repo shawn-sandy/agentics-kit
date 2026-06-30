@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.10.0 — Prototype from images and Figma designs (2026-06-29)
+
+### Added
+
+- **Image & Figma inputs for `prototype`** — `/plan-agent:prototype` now accepts an image path (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`) or a Figma URL in addition to a plan path or raw idea. For an image, the skill `Read`s the mockup/screenshot and infers the entity, fields (with types), action, and success signal from what the UI shows — no interview unless the image is ambiguous. For Figma, it loads the Figma MCP tools via `ToolSearch` (`get_screenshot` + `get_design_context`/`get_metadata`) and infers the model the same way; if no Figma MCP server is connected it asks the user to connect it or paste a screenshot rather than guessing from the URL. Steps 3–8 (derive model → write → index → preview) are unchanged.
+- **Broader secret/PII scrub** — Step 7 now scrubs seed values from any external source (plan, image, or Figma), since mockups and screenshots frequently show real names, emails, and tokens.
+
+## 2.9.0 — Static-HTML prototype generator (2026-06-29)
+
+### Added
+
+- **`prototype` skill** — `/plan-agent:prototype <plan.html | one-line idea>` (also model-invocable) turns a completed HTML plan or a raw idea into a runnable, framework-free static-HTML prototype under `docs/prototypes/`. The skill resolves the input (`.html` token → plan path; otherwise a raw idea that triggers a 3-question interview), derives a deterministic data model, echoes it back for confirmation, then fills a reusable skeleton. One self-contained file — inline CSS + vanilla JS, an inline JSON seed, and a per-prototype localStorage store — opens by double-click on `file://` and publishes to GitHub Pages.
+- **Security & a11y baked into the skeleton** — `reference/PROTOTYPE-SKELETON.html` renders records via `textContent` (never `innerHTML`), HTML-escapes interpolated values at fill time, uses script-breakout-safe seed encoding, isolates storage per prototype via `{{STORE_KEY}}`, and ships labeled inputs, a semantic table, real buttons, visible focus, form validation, a confirm-guarded reset, an empty state, and an `aria-live` status region.
+- **Prototypes gallery** — `hooks/build-prototypes-index.sh` (forked from `build-index.sh`) scans `docs/prototypes/*.html`, parses `proto-*` meta, and emits an escaped, newest-first `docs/prototypes/index.html` from `templates/prototypes-gallery.html`. A new `PostToolUse` hook entry auto-rebuilds it on prototype writes (scoped to `docs/prototypes/`, leaving the plans gallery untouched), and `docs/index.html` gains a Prototypes hub card.
+- **Tests** — `tests/plugins/test-prototype-portability.sh` (objective smoke), `test-build-prototypes-index.sh` (gallery builder unit), and `test-prototype-persistence.mjs` (plain-Node store test with a localStorage shim, no jsdom), wired into `publish-dist.yml` by explicit path.
+
 ## 2.8.3 — Order plans gallery newest-first by created date, not mtime (2026-06-27)
 
 ### Fixed
