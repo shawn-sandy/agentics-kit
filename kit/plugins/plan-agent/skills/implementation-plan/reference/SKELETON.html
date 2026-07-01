@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-status="{status}">
+<html lang="en" data-status="{status}" data-effort="{effort-value}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="plan-status" content="{status}">
+<meta name="plan-effort" content="{effort-value}">
 <meta name="plan-type" content="{type}">
 <meta name="plan-created" content="{created}">
 <meta name="plan-repo" content="{repo-name}">
@@ -170,6 +171,26 @@
   [data-status="todo"]        .status-badge { background: #6b7280; }
   [data-status="in-progress"] .status-badge { background: #d97706; }
   [data-status="completed"]   .status-badge { background: #16a34a; }
+
+  /* Effort badge — color tracks the data-effort attribute, mirroring .status-badge */
+  .effort-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: .25rem .75rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    color: #fff;
+  }
+  .effort-badge::before { content: "Effort "; opacity: .7; }
+  [data-effort="low"]    .effort-badge { background: #16a34a; }
+  [data-effort="medium"] .effort-badge { background: #d97706; }
+  [data-effort="high"]   .effort-badge { background: #dc2626; }
 
   @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
   [data-status="in-progress"] .status-badge::before {
@@ -1222,6 +1243,7 @@ img, video { max-width: 100%; height: auto; }
       <div class="plan-header-actions">
         <button class="save-pdf-btn" type="button" onclick="savePDF()"
                 aria-label="Save this plan as PDF">Save as PDF</button>
+        <span class="effort-badge" aria-label="Effort level">{effort}</span>
         <span class="status-badge">{status}</span>
       </div>
     </div>
@@ -1237,6 +1259,10 @@ img, video { max-width: 100%; height: auto; }
       <span>
         <svg class="icon" aria-hidden="true"><use href="#ic-tag"/></svg>
         {type}
+      </span>
+      <span>
+        <svg class="icon" aria-hidden="true"><use href="#ic-bolt"/></svg>
+        {effort} effort
       </span>
     </div>
   </div>
@@ -1733,12 +1759,12 @@ function copyPrompt(btn) {
 (function () {
   'use strict';
 
-  /* ── Progress bar + HTML-attribute persistence ──────────────── */
+  /* ── Progress bar — state from HTML attributes ──────────────── */
   /* State lives in the HTML itself: a criterion is done iff its       */
   /* <input> carries the `checked` attribute, which the browser        */
-  /* renders natively on load — no localStorage. Toggling a box syncs  */
-  /* the attribute so the live DOM (and any saved copy of this file)   */
-  /* stays the single source of truth.                                 */
+  /* renders natively on load. Toggling a box syncs the attribute so   */
+  /* the live DOM (and any saved copy of this file) stays the single   */
+  /* portable source of truth — no browser-only storage layer.         */
   var bar        = document.getElementById('progress-bar');
   var label      = document.getElementById('progress-label');
   var liveRegion = document.getElementById('criteria-status');

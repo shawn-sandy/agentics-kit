@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.12.0 — Effort badge and filter in the plans gallery (2026-06-30)
+
+### Added
+
+- **Effort badge on plan cards** — the `plans-library` gallery now reads each plan's `<meta name="plan-effort">` tag and renders a colour-coded **Low / Medium / High** chip (green / amber / red) in the card badge row, alongside the existing status and type chips.
+- **Effort filter** — a new **Effort** chip row (All / Low / Medium / High) joins the status and type filters in the toolbar. Plans with no `plan-effort` tag render with no badge and pass every effort filter, so older plans are never hidden. `plans-gallery.html` carries the new chip styles, filter row, and `data-effort` filter logic; `SKILL.md` Step 4 parses `plan-effort` and emits `data-effort` plus the conditional badge.
+
+## 2.11.0 — Auto-derived effort level on plan HTML (2026-06-30)
+
+### Added
+
+- **Effort level on every plan** — the `implementation-plan` skeleton now renders an auto-derived **Low / Medium / High** effort level as a colour-coded header badge (green / amber / red), a chip in the meta row, and a `<meta name="plan-effort">` tag. The level is derived deterministically in Step 2 from the plan's step count, distinct files touched, and the Step 5b interview complexity tier — no flag, no author input. Colour is driven by a `data-effort` attribute on `<html>` (mirroring `data-status`), so it ships with zero new JavaScript. `SKILL.md` Step 2/3 and the HTML Output Requirements document the new field; `tests/test-effort-level.sh` asserts the skeleton carries the meta tag, the `.effort-badge` CSS variants, and the `data-effort` attribute.
+
+## 2.10.1 — Portable checkbox state via HTML attributes (2026-06-30)
+
+### Changed
+
+- **Checkbox state now travels with the file** — the `implementation-plan` skeleton no longer persists acceptance-criteria ticks to `localStorage`. The `checked` attribute on each criterion `<input>` (and the `.completed` class on each `.step-card`) is the single portable source of truth, written into the file by the agent. A plan renders its true completion state on first paint on any machine, in any browser, and in git — no per-browser storage layer to diverge from. `SKILL.md` Step 6 and the Step 8 gates now instruct the agent to mark by adding the `checked` attribute and unmark by removing it, and the HTML Output Requirements forbid `localStorage` for checkbox state.
+
+### Added
+
+- **Portability smoke test** — `tests/test-checkbox-portability.sh` plus `tests/fixtures/checkbox-portability/fixture.html` assert the skeleton carries no browser-storage APIs and that the fixture's `checked` attributes and `.completed` class live in the file on disk.
+
 ## 2.10.0 — Prototype from images and Figma designs (2026-06-29)
 
 ### Added
