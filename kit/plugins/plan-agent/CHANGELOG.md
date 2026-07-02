@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.12.2 — Fix invalid file-tree nesting in generated plans (2026-07-01)
+
+### Fixed
+
+- **Nested directory list is now a child of its directory `<li>`** — the implementation-plan File-Tree Auto-Generation instructions told the generator to emit a `<li class="file-dir">` heading *followed by* a sibling `<ul class="file-list">`, making the inner `ul` a direct child of the outer `ul` (invalid HTML — a `ul` may only contain `li` children; flagged by Copilot on PR #364). `SKILL.md`'s Grouping prose and Rendering pattern, plus the skeleton's row-template comment, now place the nested `ul` inside the directory `li`, and the skeleton CSS gains `.file-list li.file-dir > ul { flex-basis: 100%; }` so the nested list renders on its own row inside the flex `li`. Matches the hand-fixed markup in `docs/plans/add-dynamic-depth-and-mode-to-refine-prompt.html` (commit 371f812).
+
+## 2.12.1 — Fix double-escaped titles in the plans gallery index (2026-07-01)
+
+### Fixed
+
+- **Idempotent title escaping in the gallery generator** — `hooks/build-index.sh` (and its vendored copy `scripts/build-plans-index.sh`) extracted card titles from each plan's `<title>` tag as already-encoded HTML and escaped them again on render, so titles containing entities (e.g. `&amp;`) came out as `&amp;amp;` on every regeneration (regressed in PR #362, previously hand-fixed in PR #241). `get_title` now unescapes on extraction so the pipeline holds plain text and `e()` escapes exactly once — regeneration is idempotent.
+
 ## 2.12.0 — Effort badge and filter in the plans gallery (2026-06-30)
 
 ### Added
