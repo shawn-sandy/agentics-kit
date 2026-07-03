@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.13.1 — Trim finalize-plan skill description to budget (2026-07-02)
+
+### Fixed
+
+- **finalize-plan `description` frontmatter back under the 200-char budget** — the 2.13.0 description ran 207 chars, exceeding the three-part skill-description budget in `.claude/rules/plugin-patterns.md` (CodeRabbit nit on PR #366). Tightened the capability sentence ("ticks acceptance criteria; --all sweeps done-but-unmarked plans") to 188 chars while keeping all three parts: short label, capability including the `--all` sweep, and the `/plan-agent:finalize-plan` trigger. No behavior change.
+
+## 2.13.0 — `--all` sweep flag on finalize-plan (2026-07-02)
+
+### Added
+
+- **Sweep mode for finalize-plan** — `/plan-agent:finalize-plan --all` finds plans that are implemented but never marked completed. Discovery selects files carrying a `<meta name="plan-status">` tag valued `todo` or `in-progress` across the plans directory (excluding `index.html` and `archive/`; non-plan HTML without the tag is never a candidate), then a cheap, non-interactive token-evidence pass scores each candidate (token-less plans score 0% instead of prompting); plans at 80%+ evidence are flagged as "done but not marked". A single two-question `AskUserQuestion` (multi-select plan picker + one criteria mode for the whole batch) replaces the per-plan confirmation, and the expensive per-criterion verification and objective-verification test run only on the selected plans before the status writes. All updated files are delivered in one `SendUserFile` call with a per-plan summary. `tests/plugins/test-finalize-all-flag.sh` pins the flag to the SKILL.md contract, README docs, and marketplace version.
+
 ## 2.12.2 — Fix invalid file-tree nesting in generated plans (2026-07-01)
 
 ### Fixed
