@@ -2,16 +2,18 @@
 <!--
   plans-gallery.html — Plans library index for plan-agent.
 
-  Static variables (substituted by the plans-library skill):
-    GALLERY_ENTRIES  — Repeated <a> blocks, one per plan file
-    PLAN_COUNT       — Total number of plans displayed
+  Static variables (substituted by the plans-library skill and the
+  build-index.sh / build-artifacts-index.sh generators):
+    GALLERY_TITLE    — Heading noun: "Plans" or "Artifacts"
+    GALLERY_ENTRIES  — Repeated <a> blocks, one per item
+    PLAN_COUNT       — Total number of items displayed
     GENERATED_AT     — Date and time of gallery generation
 -->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Plans Library</title>
+    <title>{{GALLERY_TITLE}} Library</title>
     <style>
       :root {
         --bg: #ffffff;
@@ -494,7 +496,7 @@
   </head>
   <body>
     <div class="gallery-header">
-      <h1>Plans Library</h1>
+      <h1>{{GALLERY_TITLE}} Library</h1>
       <p>{{PLAN_COUNT}} items &mdash; click any card to open it</p>
     </div>
 
@@ -504,7 +506,7 @@
         class="search-box"
         id="searchBox"
         placeholder="Search by title..."
-        aria-label="Search plans by title"
+        aria-label="Search by title"
       />
       <div class="view-toggle">
         <button
