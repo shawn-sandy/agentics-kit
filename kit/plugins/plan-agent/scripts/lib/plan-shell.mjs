@@ -1,22 +1,32 @@
-<!DOCTYPE html>
-<html lang="en" data-status="{status}" data-effort="{effort-value}">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="plan-status" content="{status}">
-<meta name="plan-effort" content="{effort-value}">
-<meta name="plan-type" content="{type}">
-<meta name="plan-created" content="{created}">
-<meta name="plan-repo" content="{repo-name}">
-<meta name="plan-file" content="{plan-filename}">
-<meta name="plan-path" content="{plan-path}">
-<meta name="plan-implement" content="{implement-prompt}">
-<meta name="plan-goal" content="{goal-prompt}">
-<!-- Remove the next line entirely when {workflow-prompt} is empty -->
-<meta name="plan-workflow" content="{workflow-prompt}">
-<title>Plan: {title}</title>
-<style>
-  /* ── Design tokens ─────────────────────────────────────────────── */
+/**
+ * plan-shell.mjs — the presentation shell for generated HTML plans.
+ *
+ * Style and layout ONLY, never plan content: the CSS, icon sprite, and
+ * JavaScript below are extracted verbatim from the versioned template at
+ * kit/plugins/plan-agent/skills/implementation-plan/reference/SKELETON.html,
+ * and every template function takes its content as pre-escaped HTML args.
+ * scripts/build-plan-html.mjs is the only consumer; it derives, escapes, and
+ * assembles — this module just stamps the ~55 KB of boilerplate the model
+ * used to emit by hand.
+ *
+ * The CSS / ICON_SPRITE / SCRIPT blocks are spliced from SKELETON.html by a
+ * one-shot generator; regenerate them there if the skeleton changes.
+ *
+ * UI strings below were once byte-for-byte contracts that finalize-plan and
+ * the status gates matched with literal find/replace on the HTML. Since the
+ * md-first flows (plan-agent 2.20.0) tools edit the Markdown spec and
+ * re-render, so these are ordinary presentation strings now — reword freely
+ * alongside SKELETON.html.
+ */
+
+/* ── UI strings ───────────────────────────────────────────────────── */
+const STEP_CHIP = '<span class="step-chip">todo</span>';
+const STEP_CHIP_DONE = '<span class="step-chip">done</span>';
+const NO_ITEMS_REPORT = 'No items to report — all requirements met.';
+const GOAL_LABEL = 'Pursue as goal — optimize for the outcome';
+
+/* ── Blocks extracted verbatim from SKELETON.html ─────────────────── */
+export const CSS = `/* ── Design tokens ─────────────────────────────────────────────── */
   :root {
     --bg:         #ffffff;
     --surface:    #ffffff;
@@ -1224,23 +1234,18 @@
     transition: color .15s;
   }
   .plan-back-link:hover { color: var(--accent); }
-  .plan-back-link svg { width: 14px; height: 14px; flex-shrink: 0; }
-</style>
-<style id="plan-responsive-fix" data-version="1">
-/* plan-responsive-fix v1 — injected by scripts/retrofit-responsive-plans.mjs */
+  .plan-back-link svg { width: 14px; height: 14px; flex-shrink: 0; }`;
+
+export const RESPONSIVE_CSS = `/* plan-responsive-fix v1 — injected by scripts/retrofit-responsive-plans.mjs */
 body { overflow-wrap: anywhere; }
 main, nav, aside { min-width: 0; }
 .layout > *, .wrap > *, .compare-grid > * { min-width: 0; }
 pre { white-space: pre-wrap; max-width: 100%; }
 table { max-width: 100%; }
 img, video { max-width: 100%; height: auto; }
-@media (max-width: 600px) { .compare-grid { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
+@media (max-width: 600px) { .compare-grid { grid-template-columns: 1fr; } }`;
 
-<!-- ── Icon definitions (Heroicons outline, MIT) ─────────────── -->
-<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+export const ICON_SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
   <symbol id="ic-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z"/>
   </symbol>
@@ -1290,501 +1295,9 @@ img, video { max-width: 100%; height: auto; }
   <symbol id="ic-photo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
   </symbol>
-</svg>
+</svg>`;
 
-<a href="#main" class="skip-link">Skip to content</a>
-
-<!-- ── Header — document cover ─────────────────────────────────── -->
-<header class="plan-header">
-  <div class="plan-header-inner">
-    <div class="plan-back-nav">
-      <a href="./index.html" class="plan-back-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
-        Plans
-      </a>
-    </div>
-    <div class="plan-doc-type">Implementation Plan</div>
-    <div class="plan-header-top">
-      <h1 class="plan-title">{title}</h1>
-      <div class="plan-header-actions">
-        <button class="save-pdf-btn" type="button" onclick="savePDF()"
-                aria-label="Save this plan as PDF">Save as PDF</button>
-        <span class="effort-badge" aria-label="Effort level">{effort}</span>
-        <span class="status-badge">{status}</span>
-      </div>
-    </div>
-    <div class="plan-meta">
-      <span>
-        <svg class="icon" aria-hidden="true"><use href="#ic-calendar"/></svg>
-        {created}
-      </span>
-      <span>
-        <svg class="icon" aria-hidden="true"><use href="#ic-code-bracket"/></svg>
-        {repo-name}
-      </span>
-      <span>
-        <svg class="icon" aria-hidden="true"><use href="#ic-tag"/></svg>
-        {type}
-      </span>
-      <span>
-        <svg class="icon" aria-hidden="true"><use href="#ic-bolt"/></svg>
-        {effort} effort
-      </span>
-    </div>
-  </div>
-</header>
-
-<div class="layout">
-
-  <!-- ── Sidebar — table of contents ─────────────────────────── -->
-  <nav class="plan-nav" aria-label="Plan sections">
-    <div class="scroll-rail" aria-hidden="true"></div>
-    <div class="nav-heading">On this page</div>
-    <ul>
-      <li><a href="#objective"><svg class="icon" aria-hidden="true"><use href="#ic-bolt"/></svg> Objective</a></li>
-      <li><a href="#progress"><svg class="icon" aria-hidden="true"><use href="#ic-chart-bar"/></svg> Progress</a></li>
-      <li><a href="#context"><svg class="icon" aria-hidden="true"><use href="#ic-document-text"/></svg> Context</a></li>
-      <!-- Keep the next link only if the Resources section is kept; delete otherwise -->
-      <li><a href="#resources"><svg class="icon" aria-hidden="true"><use href="#ic-photo"/></svg> Resources</a></li>
-      <!-- Keep the next link only if the Files section is kept; delete otherwise -->
-      <li><a href="#files"><svg class="icon" aria-hidden="true"><use href="#ic-folder"/></svg> Files that change</a></li>
-      <!-- Keep the next link only if the Diagram section is kept; delete otherwise -->
-      <li><a href="#diagram"><svg class="icon" aria-hidden="true"><use href="#ic-chart-bar"/></svg> How it fits together</a></li>
-      <li><a href="#steps"><svg class="icon" aria-hidden="true"><use href="#ic-list-bullet"/></svg> Steps</a></li>
-      <li><a href="#tests"><svg class="icon" aria-hidden="true"><use href="#ic-beaker"/></svg> Tests</a></li>
-      <li><a href="#criteria"><svg class="icon" aria-hidden="true"><use href="#ic-check-circle"/></svg> Definition of done</a></li>
-      <li><a href="#verification"><svg class="icon" aria-hidden="true"><use href="#ic-magnifying-glass"/></svg> Final check</a></li>
-      <li><a href="#completion"><svg class="icon" aria-hidden="true"><use href="#ic-clipboard-check"/></svg> Wrapping up</a></li>
-      <li><a href="#next-steps"><svg class="icon" aria-hidden="true"><use href="#ic-arrow-right-circle"/></svg> Next steps</a></li>
-    </ul>
-  </nav>
-
-  <!-- ── Main content ─────────────────────────────────────────── -->
-  <main id="main">
-
-    <!-- ── Objective ────────────────────────────────────────────── -->
-    <div class="objective-card" id="objective">
-      <div class="section-label">Objective</div>
-      <p>{objective}</p>
-    </div>
-
-    <!-- ── At a glance (SIBLING of #objective — never nest it inside;
-         the extractor reads #objective's inner HTML) ─────────────── -->
-    <section class="plan-glance" aria-labelledby="plan-glance-label">
-      <div class="plan-glance-label" id="plan-glance-label">At a glance</div>
-      <p>{at-a-glance}</p>
-    </section>
-
-    <!-- ── Implement prompt — the single visible call-to-action ──── -->
-    <div class="plan-implement">
-      <span class="plan-implement-label">Implement</span>
-      <code id="implement-cmd" aria-label="Implement prompt">{implement-prompt}</code>
-      <button class="copy-cmd-btn" type="button"
-              onclick="copyCmd(this)" aria-label="Copy implement prompt to clipboard">Copy</button>
-    </div>
-
-    <!-- ── More ways to run this plan (collapsed drawer — one flat
-         details, no nested details, never ship the open attribute) ── -->
-    <details class="plan-more-ways">
-      <summary>More ways to run this plan <span class="more-ways-hint">— goal &amp; workflow prompts, file path</span></summary>
-      <div class="plan-more-ways-body">
-
-        <!-- Goal prompt row (outcome-driven — always present) -->
-        <div class="plan-goal">
-          <div class="plan-goal-label">Pursue as goal — optimize for the outcome</div>
-          <div class="plan-goal-inner">
-            <code id="goal-cmd" aria-label="Goal prompt">{goal-prompt}</code>
-            <button class="copy-goal-btn" type="button"
-                    onclick="copyGoal(this)" aria-label="Copy goal prompt to clipboard">Copy</button>
-          </div>
-        </div>
-
-        <!-- Workflow prompt row (remove this whole row when {workflow-prompt} is empty — keep the drawer) -->
-        <div class="plan-workflow">
-          <div class="plan-workflow-label">Run as workflow — launch parallel subagents</div>
-          <div class="plan-workflow-inner">
-            <code id="workflow-cmd" aria-label="Workflow prompt">{workflow-prompt}</code>
-            <button class="copy-workflow-btn" type="button"
-                    onclick="copyWorkflow(this)" aria-label="Copy workflow prompt to clipboard">Copy</button>
-          </div>
-        </div>
-
-        <!-- Plan source (file name + relative path, for docs & prompts) -->
-        <div class="plan-source">
-          <div class="plan-source-row">
-            <span class="plan-source-label">File</span>
-            <code id="plan-file" aria-label="Plan file name">{plan-filename}</code>
-            <button class="copy-src-btn" type="button"
-                    onclick="copyPath(this, 'plan-file')" aria-label="Copy plan file name to clipboard">Copy</button>
-          </div>
-          <div class="plan-source-row">
-            <span class="plan-source-label">Path</span>
-            <code id="plan-path" aria-label="Plan relative path">{plan-path}</code>
-            <button class="copy-src-btn" type="button"
-                    onclick="copyPath(this, 'plan-path')" aria-label="Copy plan relative path to clipboard">Copy</button>
-          </div>
-        </div>
-
-      </div>
-    </details>
-
-    <!-- ── Progress ─────────────────────────────────────────────── -->
-    <div class="progress-wrap" id="progress">
-      <div class="progress-header">
-        <span>Definition of done</span>
-        <span id="progress-label">0 / {criteria-count} done</span>
-      </div>
-      <div class="progress-bar-bg">
-        <div class="progress-bar-fill" id="progress-bar"
-             role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
-             aria-label="Plan progress" style="width:0%"></div>
-      </div>
-    </div>
-
-    <!-- ── Context ──────────────────────────────────────────────── -->
-    <section class="section-card card-context" id="context" aria-labelledby="h-context">
-      <h2 id="h-context">
-        <svg class="icon" aria-hidden="true"><use href="#ic-document-text"/></svg>
-        Context
-      </h2>
-      <p class="section-intro">The story behind this plan — what prompted the work and why it matters now.</p>
-      <p>{context}</p>
-    </section>
-
-    <!-- ════════════════════════════════════════════════════════════
-         OPT-IN VISUAL: Resources — images, screenshots & reference links.
-         KEEP and fill when the plan was informed by screenshots, mockups,
-         diagrams, docs, issues, or other references worth citing so the
-         reader can illustrate and verify the work. DELETE this whole
-         section element AND its nav entry (the "#resources" link) when
-         the plan has no supporting resources.
-         • Images: use an https:// source URL or a relative asset path
-           committed alongside the plan (small screenshots may be inlined
-           as a data: URI). ALWAYS give descriptive alt text and a
-           <figcaption> that credits/links the source. Never rely on a
-           CDN for anything the page needs to render.
-         • Links: cite every doc, issue, or reference consulted, each with
-           a short note on why it matters. HTML-escape all URLs and text.
-         ════════════════════════════════════════════════════════════ -->
-    <section class="section-card card-resources" id="resources" aria-labelledby="h-resources">
-      <h2 id="h-resources">
-        <svg class="icon" aria-hidden="true"><use href="#ic-photo"/></svg>
-        Resources
-      </h2>
-      <p class="section-intro">Screenshots, mockups, and reference links that informed this plan.</p>
-
-      <!-- Images / screenshots — remove this block if unused -->
-      <div class="resource-grid">
-        {resource-figures}
-        <!-- Figure template (duplicate as needed):
-        <figure class="resource-figure">
-          <a href="https://example.com/full-image.png" target="_blank" rel="noopener noreferrer">
-            <img src="https://example.com/screenshot.png" alt="Descriptive alt text of what the screenshot shows" loading="lazy">
-          </a>
-          <figcaption>What this shows — <a href="https://example.com/source" target="_blank" rel="noopener noreferrer">source</a></figcaption>
-        </figure> -->
-      </div>
-
-      <!-- Reference links — remove this block if unused -->
-      <ul class="resource-links">
-        {resource-links}
-        <!-- Link template (duplicate as needed):
-        <li><a href="https://example.com/doc" target="_blank" rel="noopener noreferrer">Resource title</a> <span class="resource-note">why it matters to this plan</span></li> -->
-      </ul>
-    </section>
-
-    <!-- ════════════════════════════════════════════════════════════
-         OPT-IN VISUAL: Files file-tree.
-         KEEP and fill {file-tree-rows} when the plan touches files
-         (most multi-file plans). DELETE this whole section element and
-         its nav entry (the "#files" link) when not needed.
-         Badge classes: file-badge-new | file-badge-modified |
-         file-badge-deleted | file-badge-generated.
-         ════════════════════════════════════════════════════════════ -->
-    <section class="section-card card-files" id="files" aria-labelledby="h-files">
-      <h2 id="h-files">
-        <svg class="icon" aria-hidden="true"><use href="#ic-folder"/></svg>
-        Files that change
-      </h2>
-      <p class="section-intro">Every file this plan touches, and what happens to each one.</p>
-      <div class="file-tree">
-        <div class="file-tree-root"><svg class="icon" aria-hidden="true"><use href="#ic-folder"/></svg> {repo-name}/</div>
-        <ul class="file-list">
-          {file-tree-rows}
-          <!-- Row template (duplicate as needed):
-          <li><code>path/to/file.ext</code> <span class="file-badge file-badge-modified">modified</span> <span class="file-note">what changes</span></li>
-          Nest a directory with the child list INSIDE the li:
-          <li class="file-dir"><svg class="icon" aria-hidden="true"><use href="#ic-folder"/></svg> dir/
-            <ul class="file-list">…</ul>
-          </li> -->
-        </ul>
-      </div>
-    </section>
-
-    <!-- ════════════════════════════════════════════════════════════
-         OPT-IN VISUAL: Diagram / Chart / Table.
-         KEEP and fill when the plan has a flow, comparison,
-         distribution, or structured data worth showing. DELETE this
-         whole section element and its nav entry (the "#diagram" link)
-         when not needed. Use any subset of the building blocks below
-         (.pipeline, .compare-grid, .bar-chart, .plan-table); remove
-         the sub-blocks you do not use.
-         ════════════════════════════════════════════════════════════ -->
-    <section class="section-card card-diagram" id="diagram" aria-labelledby="h-diagram">
-      <h2 id="h-diagram">
-        <svg class="icon" aria-hidden="true"><use href="#ic-chart-bar"/></svg>
-        How it fits together
-      </h2>
-      <p class="section-intro">A visual overview of the moving pieces and how they connect.</p>
-
-      <!-- Flow / pipeline — remove if unused -->
-      <div class="diagram-subheading">{diagram-heading}</div>
-      <div class="pipeline">
-        {diagram-nodes}
-        <!-- Node + arrow template (duplicate; drop the trailing arrow on the last node):
-        <div class="pipeline-node"><div class="pipeline-label">Stage</div><code>label</code><div class="pipeline-sub">detail</div></div>
-        <div class="pipeline-arrow" aria-hidden="true">↓</div> -->
-      </div>
-
-      <!-- Comparison grid — remove if unused -->
-      <div class="diagram-subheading">{compare-heading}</div>
-      <div class="compare-grid">
-        {compare-columns}
-        <!-- Column template (use compare-col-add | compare-col-neutral | compare-col-remove):
-        <div class="compare-col-add"><div class="compare-header">Title</div><ul class="compare-list"><li>item</li></ul></div> -->
-      </div>
-
-      <!-- Bar chart — remove if unused. role="img" + aria-label restates the data for screen readers -->
-      <div class="diagram-subheading">{chart-heading}</div>
-      <div class="bar-chart" role="img" aria-label="{chart-aria-label}">
-        {chart-rows}
-        <!-- Row template (set --val to a percent; show the real value in .bar-value):
-        <div class="bar-row"><span class="bar-label">label</span><span class="bar-track"><span class="bar-fill" style="--val:72%"></span></span><span class="bar-value">72%</span></div> -->
-      </div>
-
-      <!-- Data table — remove if unused. Keep <caption> and scope="col" for accessibility -->
-      <div class="diagram-subheading">{table-heading}</div>
-      <table class="plan-table">
-        <caption>{table-caption}</caption>
-        <thead>
-          <tr>{table-head-cells}<!-- <th scope="col">Column</th> --></tr>
-        </thead>
-        <tbody>
-          {table-rows}
-          <!-- Row template: <tr><td>cell</td><td>cell</td></tr> -->
-        </tbody>
-      </table>
-    </section>
-
-    <!-- ── Steps ────────────────────────────────────────────────── -->
-    <section class="section-card card-steps" id="steps" aria-labelledby="h-steps">
-      <h2 id="h-steps">
-        <svg class="icon" aria-hidden="true"><use href="#ic-list-bullet"/></svg>
-        Steps
-      </h2>
-      <p class="section-intro">The step-by-step work, in order — each step says what to do, why it matters, and how to check it worked.</p>
-      <div class="steps-list">
-
-        <div class="step-card">
-          <div class="step-card-header">
-            <div class="step-number">1</div>
-            <div class="step-body">
-              <div class="step-action">
-                <span class="step-chip">todo</span>
-                <span class="step-chip-text">{step-1-action}</span>
-              </div>
-              <div class="step-why">{step-1-why}</div>
-              <details class="step-verify-toggle">
-                <summary>How to check this worked</summary>
-                <div class="verify-body">{step-1-verify}</div>
-              </details>
-            </div>
-          </div>
-        </div>
-
-        <!-- Duplicate the block above for each additional step -->
-
-      </div>
-    </section>
-
-    <!-- ── Tests ────────────────────────────────────────────────── -->
-    <section class="section-card card-tests" id="tests" aria-labelledby="h-tests">
-      <h2 id="h-tests">
-        <svg class="icon" aria-hidden="true"><use href="#ic-beaker"/></svg>
-        Tests
-      </h2>
-      <p class="section-intro">The tests that prove the change does what it promises.</p>
-      <div class="test-tier-label">{test-tier-label}</div>
-
-      <!-- Objective-verification test — mandatory, always first -->
-      <div class="objective-test-card">
-        <div class="test-card-header">
-          <span class="test-badge test-badge-objective">Objective</span>
-          <span class="test-card-title">{objective-test-title}</span>
-        </div>
-        <div class="test-card-body">
-          {objective-test-body}
-        </div>
-      </div>
-
-      <!-- Tier 1 test sub-sections — omit entirely for Tier 2 plans -->
-      <div class="test-list">
-        {test-items}
-        <!-- Each test item uses this pattern:
-        <div class="test-card">
-          <div class="test-card-header">
-            <span class="test-badge test-badge-unit">Unit</span>
-            <span class="test-card-title">{test-title}</span>
-          </div>
-          <div class="test-card-body">
-            <p><strong>File:</strong> <code>{test-file-path}</code></p>
-            <p><strong>Targets:</strong> {test-targets}</p>
-            <p><strong>Key cases:</strong> {test-cases}</p>
-          </div>
-        </div>
-        Use test-badge-unit, test-badge-integration, or test-badge-e2e as appropriate.
-        For Tier 2, remove this entire .test-list container. -->
-      </div>
-    </section>
-
-    <!-- ── Acceptance Criteria ───────────────────────────────────── -->
-    <section class="section-card card-criteria" id="criteria" aria-labelledby="h-criteria">
-      <h2 id="h-criteria">
-        <svg class="icon" aria-hidden="true"><use href="#ic-check-circle"/></svg>
-        Definition of done
-      </h2>
-      <p class="section-intro">The plan counts as done when every statement below is true — check each one off as you verify it.</p>
-      <ul class="criteria-list" id="criteria-list">
-        <li>
-          <input type="checkbox" id="ac1">
-          <label for="ac1">{criterion-1}</label>
-        </li>
-        <li>
-          <input type="checkbox" id="ac2">
-          <label for="ac2">{criterion-2}</label>
-        </li>
-        <!-- Add more <li> items as needed -->
-      </ul>
-      <span id="criteria-status" aria-live="polite" aria-atomic="true"
-            style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"></span>
-    </section>
-
-    <!-- ── Verification ──────────────────────────────────────────── -->
-    <section class="section-card card-verification" id="verification" aria-labelledby="h-verification">
-      <h2 id="h-verification">
-        <svg class="icon" aria-hidden="true"><use href="#ic-magnifying-glass"/></svg>
-        Final check
-      </h2>
-      <p class="section-intro">One last pass to confirm the whole change works end to end.</p>
-      <p>{end-to-end-verification}</p>
-    </section>
-
-    <!-- ── Completion Checklist (mandatory — always present) ──────── -->
-    <section class="section-card card-completion" id="completion" aria-labelledby="h-completion">
-      <h2 id="h-completion">
-        <svg class="icon" aria-hidden="true"><use href="#ic-clipboard-check"/></svg>
-        Wrapping up
-      </h2>
-      <p class="section-intro">Three gates that must all pass before this plan is marked completed.</p>
-      <div class="completion-checklist" id="completion-checklist">
-        <div class="completion-header">
-          <span class="completion-badge" id="completion-badge">Required</span>
-        </div>
-        <ul class="completion-list" id="completion-list">
-          <li>
-            <input type="checkbox" id="cc1" disabled>
-            <label for="cc1">All step TODOs marked as done</label>
-          </li>
-          <li>
-            <input type="checkbox" id="cc2" disabled>
-            <label for="cc2">All acceptance criteria verified and checked off</label>
-          </li>
-          <li>
-            <input type="checkbox" id="cc3" disabled>
-            <label for="cc3">Plan status updated to completed</label>
-          </li>
-        </ul>
-        <div class="completion-report" id="completion-report">
-          <h3 class="report-heading">Completion Report</h3>
-          <p class="report-empty">No items to report — all requirements met.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Next Steps (optional — remove section if empty) ──────── -->
-    <section class="section-card card-next-steps" id="next-steps" aria-labelledby="h-next-steps">
-      <h2 id="h-next-steps">
-        <svg class="icon" aria-hidden="true"><use href="#ic-arrow-right-circle"/></svg>
-        Next steps
-      </h2>
-      <p class="section-intro">Follow-up ideas that came up along the way — none of them are required to finish this plan.</p>
-      <div class="next-steps-list">
-
-        <!-- Actionable next step -->
-        <details class="next-step-item">
-          <summary>{next-step-1-label}</summary>
-          <div class="next-step-prompt">
-            <p>Paste this prompt into Claude to execute this follow-up:</p>
-            <pre>{next-step-1-prompt}</pre>
-            <button class="copy-prompt-btn" type="button"
-                    onclick="copyPrompt(this)" aria-label="Copy prompt to clipboard">Copy prompt</button>
-          </div>
-        </details>
-
-        <!-- Wish List (blue-sky / visionary items — remove subsection if none) -->
-        <div class="wish-list-header">
-          <svg class="icon" aria-hidden="true"><use href="#ic-sparkles"/></svg>
-          Wish List
-        </div>
-
-        <details class="next-step-item wish-item">
-          <summary>
-            {wish-1-label}
-            <span class="wish-badge">Wish List</span>
-          </summary>
-          <div class="next-step-prompt">
-            <p>Speculative / blue-sky idea — not on the critical path. Paste into Claude when ready to explore:</p>
-            <pre>{wish-1-prompt}</pre>
-            <button class="copy-prompt-btn" type="button"
-                    onclick="copyPrompt(this)" aria-label="Copy prompt to clipboard">Copy prompt</button>
-          </div>
-        </details>
-
-      </div>
-    </section>
-
-    <!-- ── Unresolved Questions (optional — omit entirely if none) ─ -->
-    <details class="optional-section">
-      <summary>
-        <svg class="icon" aria-hidden="true"><use href="#ic-question-mark-circle"/></svg>
-        Unresolved questions
-      </summary>
-      <div class="optional-body">
-        <ul class="unresolved-list">
-          <li>
-            <details class="unresolved-item">
-              <summary>{question-1-label}</summary>
-              <div class="unresolved-prompt">
-                <pre>{question-1-prompt}</pre>
-                <button class="copy-prompt-btn" type="button"
-                        onclick="copyPrompt(this)" aria-label="Copy prompt to clipboard">Copy prompt</button>
-              </div>
-            </details>
-          </li>
-        </ul>
-      </div>
-    </details>
-
-    <footer class="plan-footer">
-      <svg class="icon" aria-hidden="true"><use href="#ic-sparkles"/></svg>
-      Generated by plan-agent · {created} · {repo-name}
-    </footer>
-
-  </main>
-</div><!-- /.layout -->
-
-<script>
-/* ── Save as PDF (native browser print dialog) ──────────────── */
+export const SCRIPT = `/* ── Save as PDF (native browser print dialog) ──────────────── */
 function savePDF() {
   window.print();
 }
@@ -1818,11 +1331,11 @@ function buildImplementPrompt() {
   lines.push('3. When all steps are done, verify each acceptance criterion and check it off in the plan.');
   lines.push('4. Complete the completion checklist to update the plan status to completed.');
 
-  return lines.join('\n');
+  return lines.join('\\n');
 }
 
 /* ── Shared clipboard helper ────────────────────────────────── */
-/* All copy buttons delegate here. `restoreLabel` is the button's   */
+/* All copy buttons delegate here. \`restoreLabel\` is the button's   */
 /* idle text. On failure (Clipboard API rejects AND execCommand     */
 /* fails) the button shows a visible error so the user knows to      */
 /* select manually — never a silent no-op.                          */
@@ -1899,7 +1412,7 @@ function copyPrompt(btn) {
 
   /* ── Progress bar — state from HTML attributes ──────────────── */
   /* State lives in the HTML itself: a criterion is done iff its       */
-  /* <input> carries the `checked` attribute, which the browser        */
+  /* <input> carries the \`checked\` attribute, which the browser        */
   /* renders natively on load. Toggling a box syncs the attribute so   */
   /* the live DOM (and any saved copy of this file) stays the single   */
   /* portable source of truth — no browser-only storage layer.         */
@@ -2013,7 +1526,319 @@ function copyPrompt(btn) {
     }, { threshold: 0, rootMargin: '-20% 0px -70% 0px' });
     sections.forEach(function (el) { observer.observe(el); });
   }
-})();
+})();`;
+
+/* ── Section chrome — intros are presentation-only (the extractor
+      strips <p class="section-intro">), headings match the skeleton ── */
+export const SECTION_CHROME = {
+  context: { icon: 'ic-document-text', heading: 'Context', intro: 'The story behind this plan — what prompted the work and why it matters now.' },
+  files: { icon: 'ic-folder', heading: 'Files that change', intro: 'Every file this plan touches, and what happens to each one.' },
+  steps: { icon: 'ic-list-bullet', heading: 'Steps', intro: 'The step-by-step work, in order — each step says what to do, why it matters, and how to check it worked.' },
+  tests: { icon: 'ic-beaker', heading: 'Tests', intro: 'The tests that prove the change does what it promises.' },
+  criteria: { icon: 'ic-check-circle', heading: 'Definition of done', intro: 'The plan counts as done when every statement below is true — check each one off as you verify it.' },
+  verification: { icon: 'ic-magnifying-glass', heading: 'Final check', intro: 'One last pass to confirm the whole change works end to end.' },
+  completion: { icon: 'ic-clipboard-check', heading: 'Wrapping up', intro: 'Three gates that must all pass before this plan is marked completed.' },
+};
+
+/* Sidebar nav entries in skeleton order; the renderer filters to the
+   sections actually present. */
+export const NAV_ENTRIES = [
+  { id: 'objective', icon: 'ic-bolt', label: 'Objective' },
+  { id: 'progress', icon: 'ic-chart-bar', label: 'Progress' },
+  { id: 'context', icon: 'ic-document-text', label: 'Context' },
+  { id: 'files', icon: 'ic-folder', label: 'Files that change' },
+  { id: 'steps', icon: 'ic-list-bullet', label: 'Steps' },
+  { id: 'tests', icon: 'ic-beaker', label: 'Tests' },
+  { id: 'criteria', icon: 'ic-check-circle', label: 'Definition of done' },
+  { id: 'verification', icon: 'ic-magnifying-glass', label: 'Final check' },
+  { id: 'completion', icon: 'ic-clipboard-check', label: 'Wrapping up' },
+];
+
+const icon = (id) => `<svg class="icon" aria-hidden="true"><use href="#${id}"/></svg>`;
+
+/* ── Template functions — args are pre-escaped HTML strings ────────── */
+
+/** <head> meta tags. `workflow` may be empty → tag omitted entirely. */
+export function metaTags({ status, effort, type, created, repo, file, path, implement, goal, workflow }) {
+  const tags = [
+    `<meta name="plan-status" content="${status}">`,
+    `<meta name="plan-effort" content="${effort}">`,
+    `<meta name="plan-type" content="${type}">`,
+    `<meta name="plan-created" content="${created}">`,
+    `<meta name="plan-repo" content="${repo}">`,
+    `<meta name="plan-file" content="${file}">`,
+    `<meta name="plan-path" content="${path}">`,
+    `<meta name="plan-implement" content="${implement}">`,
+    `<meta name="plan-goal" content="${goal}">`,
+  ];
+  if (workflow) tags.push(`<meta name="plan-workflow" content="${workflow}">`);
+  return tags.join('\n');
+}
+
+export function header({ title, status, effortLabel, created, repo, type }) {
+  return `<header class="plan-header">
+  <div class="plan-header-inner">
+    <div class="plan-back-nav">
+      <a href="./index.html" class="plan-back-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
+        Plans
+      </a>
+    </div>
+    <div class="plan-doc-type">Implementation Plan</div>
+    <div class="plan-header-top">
+      <h1 class="plan-title">${title}</h1>
+      <div class="plan-header-actions">
+        <button class="save-pdf-btn" type="button" onclick="savePDF()"
+                aria-label="Save this plan as PDF">Save as PDF</button>
+        <span class="effort-badge" aria-label="Effort level">${effortLabel}</span>
+        <span class="status-badge">${status}</span>
+      </div>
+    </div>
+    <div class="plan-meta">
+      <span>${icon('ic-calendar')} ${created}</span>
+      <span>${icon('ic-code-bracket')} ${repo}</span>
+      <span>${icon('ic-tag')} ${type}</span>
+      <span>${icon('ic-bolt')} ${effortLabel} effort</span>
+    </div>
+  </div>
+</header>`;
+}
+
+/** Sidebar nav from NAV_ENTRIES filtered to present ids. */
+export function nav(ids) {
+  const items = NAV_ENTRIES.filter((e) => ids.includes(e.id))
+    .map((e) => `      <li><a href="#${e.id}">${icon(e.icon)} ${e.label}</a></li>`)
+    .join('\n');
+  return `  <nav class="plan-nav" aria-label="Plan sections">
+    <div class="scroll-rail" aria-hidden="true"></div>
+    <div class="nav-heading">On this page</div>
+    <ul>
+${items}
+    </ul>
+  </nav>`;
+}
+
+export function objectiveCard(objective) {
+  return `    <div class="objective-card" id="objective">
+      <div class="section-label">Objective</div>
+      <p>${objective}</p>
+    </div>`;
+}
+
+/** At-a-glance block — ALWAYS a sibling of #objective, never nested. */
+export function glanceBlock(glance) {
+  return `    <section class="plan-glance" aria-labelledby="plan-glance-label">
+      <div class="plan-glance-label" id="plan-glance-label">At a glance</div>
+      <p>${glance}</p>
+    </section>`;
+}
+
+export function implementRow(implement) {
+  return `    <div class="plan-implement">
+      <span class="plan-implement-label">Implement</span>
+      <code id="implement-cmd" aria-label="Implement prompt">${implement}</code>
+      <button class="copy-cmd-btn" type="button"
+              onclick="copyCmd(this)" aria-label="Copy implement prompt to clipboard">Copy</button>
+    </div>`;
+}
+
+/** More-ways drawer. `workflow` empty → row omitted, drawer kept. */
+export function moreWaysDrawer({ goal, workflow, file, path }) {
+  const workflowRow = workflow
+    ? `
+        <div class="plan-workflow">
+          <div class="plan-workflow-label">Run as workflow — launch parallel subagents</div>
+          <div class="plan-workflow-inner">
+            <code id="workflow-cmd" aria-label="Workflow prompt">${workflow}</code>
+            <button class="copy-workflow-btn" type="button"
+                    onclick="copyWorkflow(this)" aria-label="Copy workflow prompt to clipboard">Copy</button>
+          </div>
+        </div>
+`
+    : '';
+  return `    <details class="plan-more-ways">
+      <summary>More ways to run this plan <span class="more-ways-hint">— goal &amp; workflow prompts, file path</span></summary>
+      <div class="plan-more-ways-body">
+
+        <div class="plan-goal">
+          <div class="plan-goal-label">${GOAL_LABEL}</div>
+          <div class="plan-goal-inner">
+            <code id="goal-cmd" aria-label="Goal prompt">${goal}</code>
+            <button class="copy-goal-btn" type="button"
+                    onclick="copyGoal(this)" aria-label="Copy goal prompt to clipboard">Copy</button>
+          </div>
+        </div>
+${workflowRow}
+        <div class="plan-source">
+          <div class="plan-source-row">
+            <span class="plan-source-label">File</span>
+            <code id="plan-file" aria-label="Plan file name">${file}</code>
+            <button class="copy-src-btn" type="button"
+                    onclick="copyPath(this, 'plan-file')" aria-label="Copy plan file name to clipboard">Copy</button>
+          </div>
+          <div class="plan-source-row">
+            <span class="plan-source-label">Path</span>
+            <code id="plan-path" aria-label="Plan relative path">${path}</code>
+            <button class="copy-src-btn" type="button"
+                    onclick="copyPath(this, 'plan-path')" aria-label="Copy plan relative path to clipboard">Copy</button>
+          </div>
+        </div>
+
+      </div>
+    </details>`;
+}
+
+/** Progress bar with its server-rendered initial state; the inline script
+ * recomputes it from the live checkboxes on load and on every toggle. */
+export function progressBlock(doneCount, criteriaCount) {
+  const pct = criteriaCount ? Math.round((doneCount / criteriaCount) * 100) : 0;
+  return `    <div class="progress-wrap" id="progress">
+      <div class="progress-header">
+        <span>Definition of done</span>
+        <span id="progress-label">${doneCount} / ${criteriaCount} done</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill${pct > 0 ? ' has-progress' : ''}" id="progress-bar"
+             role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"
+             aria-label="Plan progress" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+}
+
+/** Generic section wrapper matching the skeleton's .section-card shape. */
+export function sectionCard(id, body) {
+  const { icon: ic, heading, intro } = SECTION_CHROME[id];
+  return `    <section class="section-card card-${id}" id="${id}" aria-labelledby="h-${id}">
+      <h2 id="h-${id}">
+        ${icon(ic)}
+        ${heading}
+      </h2>
+      <p class="section-intro">${intro}</p>
+${body}
+    </section>`;
+}
+
+export function fileTreeBlock(repo, rows) {
+  return `      <div class="file-tree">
+        <div class="file-tree-root">${icon('ic-folder')} ${repo}/</div>
+        <ul class="file-list">
+${rows}
+        </ul>
+      </div>`;
+}
+
+export function stepCard(n, { action, why, verify, done = false }) {
+  return `        <div class="step-card${done ? ' completed' : ''}">
+          <div class="step-card-header">
+            <div class="step-number">${n}</div>
+            <div class="step-body">
+              <div class="step-action">
+                ${done ? STEP_CHIP_DONE : STEP_CHIP}
+                <span class="step-chip-text">${action}</span>
+              </div>
+              <div class="step-why">${why}</div>
+              <details class="step-verify-toggle">
+                <summary>How to check this worked</summary>
+                <div class="verify-body">${verify}</div>
+              </details>
+            </div>
+          </div>
+        </div>`;
+}
+
+/** items: [{ text, done }] — done renders the `checked` attribute, the
+ * file-persisted completion state the spec's `- [x]` bullets carry. */
+export function criteriaListBlock(items) {
+  const lis = items
+    .map(
+      ({ text, done }, i) => `        <li>
+          <input type="checkbox" id="ac${i + 1}"${done ? ' checked' : ''}>
+          <label for="ac${i + 1}">${text}</label>
+        </li>`
+    )
+    .join('\n');
+  return `      <ul class="criteria-list" id="criteria-list">
+${lis}
+      </ul>
+      <span id="criteria-status" aria-live="polite" aria-atomic="true"
+            style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"></span>`;
+}
+
+/**
+ * Completion checklist with its state derived from the spec (all steps done,
+ * all criteria checked, status completed) — the same conditions the inline
+ * script recomputes from the live DOM on load. `reportHtml` replaces the
+ * default "No items to report" paragraph when the spec carries a
+ * `## Completion Report` section.
+ */
+export function completionBlock({ allStepsDone = false, allCriteriaDone = false, statusCompleted = false, reportHtml = '' } = {}) {
+  const allComplete = allStepsDone && allCriteriaDone && statusCompleted;
+  const box = (id, on, label) => `          <li>
+            <input type="checkbox" id="${id}" disabled${on ? ' checked' : ''}>
+            <label for="${id}">${label}</label>
+          </li>`;
+  return `      <div class="completion-checklist${allComplete ? ' all-complete' : ''}" id="completion-checklist">
+        <div class="completion-header">
+          <span class="completion-badge" id="completion-badge">Required</span>
+        </div>
+        <ul class="completion-list" id="completion-list">
+${box('cc1', allStepsDone, 'All step TODOs marked as done')}
+${box('cc2', allCriteriaDone, 'All acceptance criteria verified and checked off')}
+${box('cc3', statusCompleted, 'Plan status updated to completed')}
+        </ul>
+        <div class="completion-report" id="completion-report">
+          <h3 class="report-heading">Completion Report</h3>
+${reportHtml || `          <p class="report-empty">${NO_ITEMS_REPORT}</p>`}
+        </div>
+      </div>`;
+}
+
+export function footer({ created, repo }) {
+  return `    <footer class="plan-footer">
+      ${icon('ic-sparkles')}
+      Generated by plan-agent · ${created} · ${repo}
+    </footer>`;
+}
+
+/** Assemble the full self-contained document. */
+export function page({ status, effort, title, meta, headerHtml, navHtml, mainHtml }) {
+  return `<!DOCTYPE html>
+<html lang="en" data-status="${status}" data-effort="${effort}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+${meta}
+<title>Plan: ${title}</title>
+<style>
+${CSS}
+</style>
+<style id="plan-responsive-fix" data-version="1">
+${RESPONSIVE_CSS}
+</style>
+</head>
+<body>
+
+${ICON_SPRITE}
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+${headerHtml}
+
+<div class="layout">
+
+${navHtml}
+
+  <main id="main">
+
+${mainHtml}
+
+  </main>
+</div><!-- /.layout -->
+
+<script>
+${SCRIPT}
 </script>
 </body>
 </html>
+`;
+}

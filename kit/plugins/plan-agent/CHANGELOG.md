@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.20.0 — Markdown-first status and checkbox flows (Phase 3) (2026-07-12)
+
+### Added
+
+- **Progress state in the plan spec** — `parseSpecMarkdown()` now reads completion state from checkbox syntax and returns it as a separate `progress` key (content `sections` stay byte-stable, so the extract → digest → parse round-trip is untouched): `- [x]` / `- [ ]` bullets under `## Acceptance Criteria` carry per-criterion state (plain `- ` bullets parse as unchecked), an optional `[x]` marker after a step number (`3. [x] <action> Why: … Verify: …`) carries per-step state, and a new optional `## Completion Report` lifecycle section (`- <item> — <reason>` bullets) carries close-out findings.
+- **Renderer derives all completion markup** — `build-plan-html.mjs` renders checked criteria inputs, completed step cards with `done` chips, a server-rendered initial progress bar (label, width, `aria-valuenow`), the completion checklist (cc1–cc3 `checked` plus the `all-complete` class, from all-steps-done + all-criteria-done + `status: completed`), and the `dl.report-list` Completion Report — the exact markup `finalize-plan` used to write by hand.
+
+### Changed
+
+- **`finalize-plan` goes md-first** — when the plan has a sibling `<stem>.md` spec, all completion writes are Markdown edits (frontmatter `status`, criteria checkbox flips per the user's choice, step `[x]` markers, a `## Completion Report` section for unverified criteria / evidence gaps / objective-test failures) followed by an explicit re-render via `build-plan-html.mjs`; it also reconciles transition-window drift (criteria checked in the HTML before this release are flipped into the spec). Accepts `.md` plan arguments alongside `.html`. Legacy plans without a spec keep the direct HTML attribute edits.
+- **`implementation-plan` status gates edit the spec** — Step 6 and the Step 8 implement-now gates flip step/criterion state in the spec markdown and re-render instead of editing `checked` attributes, `.step-card` classes, and status attributes in the HTML; re-rendering is now lossless (progress re-renders from the spec), so the "re-rendering resets HTML progress state" caveat is gone. The completion-checklist gate verifies spec state and lets the renderer derive cc1–cc3/`all-complete`; gaps are recorded as `## Completion Report` bullets.
+- **Frozen-string contracts retired** — nothing matches the `todo` step chip, the "No items to report — all requirements met." sentence, or the "Pursue as goal" label byte-for-byte anymore, so the exported `STEP_CHIP`/`STEP_CHIP_DONE`/`NO_ITEMS_REPORT`/`GOAL_LABEL` constants in `plan-shell.mjs` are demoted to internal presentation strings and the byte-for-byte test pin is replaced by behavioral progress-state assertions. The gallery keeps reading `plan-*` meta tags from rendered HTML unchanged.
+- **`section-catalog.md` documents the state syntax** — checkbox bullets for Acceptance Criteria, the step `[x]` marker, and the `## Completion Report` lifecycle section; `SKELETON.md` starts criteria as `- [ ]` bullets.
+
+## 2.19.0 — Guideline-driven plan authoring (Phase 2) (2026-07-12)
+
+### Added
+
+- **`skills/implementation-plan/guidelines/` library** — four guideline documents replacing the prescriptive markup rulebook, loaded via progressive disclosure (SKILL.md keeps a one-paragraph summary of each; the full file is read only when the step calls for it): `planning-principles.md` (falsifiable "done", what/why/verify per step, end-to-end verification, surfaced risks, explicit scope), `section-catalog.md` (each spec section's purpose, when it earns its place, and the exact syntax `build-plan-html.mjs` parses, plus the frontmatter key table), `right-sizing.md` (minimal / standard / deep depth profiles with a calibration table — where the `minimal`/`adr`/`spike` intent ships as guidance instead of extra HTML skeletons), and `writing-style.md` (tone, plain language, objective-vs-glance — moved out of the workflow doc).
+
+### Changed
+
+- **`SKILL.md` rewritten around the markdown-spec pipeline** — the agent now authors a ~5–10 KB Markdown plan spec (the source of truth, committed beside the HTML) and renders it with the bundled `scripts/build-plan-html.mjs`; the agent decides which optional sections a plan includes, at what depth, per the guidelines. Workflow Steps 0–8 (issue ingestion, explore, clarify, align, interview, tests, status gates, delivery, next-action menu) survive intact; a new Step 5d runs the renderer, and Step 8's "Edit the plan" edits the spec and re-renders instead of patching HTML. The Required Structure, HTML Output Requirements, Visual Components, Frozen Strings, File-Tree Auto-Generation, and skeleton-copying prose is gone — the renderer owns all of it mechanically. SKILL.md drops from 76 KB to ~26 KB.
+- **`reference/SKELETON.md` is now the spec starter** — rewritten to the exact format `parseSpecMarkdown()` accepts (frontmatter keys, `# Plan:` title, `Why:`/`Verify:` step markers, `- path (badge) — note` file entries, tier line + test bullets), replacing the old humanized-headings fallback. `reference/SKELETON.html` remains for reference and its smoke tests but is no longer copied by the skill.
+- **`--priority` and issue URLs land in the spec, not meta tags** — `priority:` and `issue:` are written as spec frontmatter keys (preserved in the markdown, not yet rendered as `plan-priority`/`plan-issue` meta tags); the seeding issue is also cited in the Context section. `planAgent.extraFrontmatter` pairs likewise go to spec frontmatter instead of extra `<meta>` tags.
+- **Tests updated for the pipeline** — `test-goal-prompt.sh` asserts SKILL.md documents the derived goal-prompt contract (format + `plan-goal` meta + `copyGoal(this)`) rather than a `{goal-prompt}` placeholder; `test-resources-section.sh` asserts the Resources guidance lives in `guidelines/section-catalog.md` and the spec skeleton.
+
+## 2.18.0 — Markdown-spec-to-HTML plan renderer (2026-07-12)
+
+### Added
+
+- **`scripts/build-plan-html.mjs` renderer CLI** (repo-level) — `node scripts/build-plan-html.mjs <spec.md> [-o <plan.html>]` renders a small Markdown plan spec into the full styled HTML plan, reproducing today's DOM contract (all `plan-*` meta tags, `#objective`, the implement row and more-ways drawer, `#steps` step cards, `#tests`, `#criteria-list`, `#verification`, the completion checklist) with all spec text HTML-escaped. Derived fields are computed, never authored: the implement/goal/workflow prompts, the effort level (same Low/Medium/High thresholds the skill uses), the file-tree markup, the criteria count, and a sidebar nav filtered to the sections present.
+- **`parseSpecMarkdown()` in `scripts/lib/plan-spec.mjs`** — the inverse of `buildDigest()`: parses a spec (optional YAML frontmatter for metadata, then title/Objective/Context/Files/Steps with Why:/Verify:/Tests/Acceptance Criteria/Verification) into the same sections object `extractSections()` returns, so the extractor and renderer cannot drift apart.
+- **`scripts/lib/plan-shell.mjs` presentation shell** — the SKELETON.html CSS, icon sprite, JavaScript behaviours, and frozen strings (`todo` step chip, "No items to report — all requirements met.", "Pursue as goal — optimize for the outcome") extracted into exported template functions holding style and layout only, never plan content.
+- **`hooks/render-plan-html.py` regeneration hook** — PostToolUse on Write|Edit|MultiEdit: when a `# Plan:` Markdown spec inside the resolved plans directory is written, the sibling `.html` is re-rendered via `build-plan-html.mjs` — preferring the copy bundled with the plugin (`$CLAUDE_PLUGIN_ROOT/scripts/`), falling back to the consumer project's `scripts/build-plan-html.mjs`, and silently skipping when neither exists. Resolves `plansDirectory` with the skill's full settings precedence (project `.claude/settings.local.json`, then project `.claude/settings.json`, then global `~/.claude/settings.json`, falling back to `docs/plans/`), and exits non-zero with the error on stderr when the renderer fails. After a successful render it rebuilds the plans gallery index best-effort, since the index hook skipped the `.md` write and a subprocess-written `.html` is not a tool event.
+- **Bundled renderer** — `scripts/build-plan-html.mjs` plus `scripts/lib/plan-spec.mjs` and `scripts/lib/plan-shell.mjs` ship inside the plugin (byte-identical copies of the repo-root sources, pinned by a parity test) so normal marketplace installs get a working hook without vendoring the development repo.
+- **`tests/plugins/test-build-plan-html.mjs`** — unit cases for `parseSpecMarkdown()`, CLI and hook integration cases, and the round-trip property: every committed plan in `docs/plans/` whose sections extract cleanly must survive extract → digest → parse → render → re-extract with a deep-equal sections object (59 plans at introduction; ≥10 required), plus frozen-string and zero-unfilled-placeholder assertions.
+
+### Changed
+
+- **Reduced-motion coverage in `reference/SKELETON.html` (and the extracted shell)** — `prefers-reduced-motion: reduce` now also disables smooth scrolling and the in-progress status-badge pulse, matching the reduced-motion handling the other animated elements already had.
+
 ## 2.17.0 — Humanized implementation-plan output (2026-07-09)
 
 ### Added
