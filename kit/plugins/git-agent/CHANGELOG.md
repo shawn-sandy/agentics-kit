@@ -1,5 +1,24 @@
 # Changelog — git-agent
 
+## v4.0.1 — 2026-07-13 — Per-skill model pinning
+
+### Changed
+
+- Model frontmatter tuned to match each component's job: `branch-agent` fixed from `Haiku` to the documented lowercase `haiku` alias; `commit-agent` and the `agent-commit` background agent pinned to `haiku` (rigid conventional-commit format, high frequency); `pr-agent` and `create-issue` pinned to `sonnet` (outward-facing prose, matching `agent-pr`). `ship` and `ship-autonomous` deliberately inherit the session model — ship-autonomous's CI autofix step applies real code edits and should never run on a downgraded model. Overrides are turn-scoped and fall back to the session model if excluded by an org `availableModels` allowlist.
+
+## v4.0.0 — 2026-07-13 — create-issue auto-activates on intent match
+
+### Changed
+
+- **Breaking (activation behavior):** removed `disable-model-invocation: true` from the `create-issue` skill — it now auto-activates when user intent matches (e.g. "file a bug", "open an issue", "create a feature ticket") in addition to explicit `/git-agent:create-issue` invocation. The confirmation gate before issue creation is unchanged.
+- `create-issue` Phase 3 documents both activation paths: on ambient model invocation `$ARGUMENTS` is empty, so the source keyword and title are derived from the triggering message and recent conversation before falling back to `AskUserQuestion`.
+
+## v3.12.0 — 2026-07-13 — create-issue accepts plan files as a source
+
+### Added
+
+- `create-issue` skill: new `plan` source — pass a plan file path (`.md` spec or rendered `.html`; a bare `.md`/`.html` token implies the source without the keyword) and the skill maps the plan's title, Objective, Steps (as a `- [ ]` checklist), and Acceptance Criteria into a structured issue body via the new `references/plan-issue.md` template. Labels are suggested from the plan's `type:` frontmatter. The issue body cites the plan path so the ticket links back to its plan.
+
 ## v3.11.1 — 2026-07-11 — More descriptive, human-readable generated branch names
 
 ### Changed
