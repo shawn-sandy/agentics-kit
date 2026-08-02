@@ -1,5 +1,195 @@
 # Changelog — social-media-tools
 
+## v2.21.0 — 2026-08-01 — The media library joins the shared site shell
+
+### Changed
+
+- **The media gallery is no longer a dark-only page.** It carried a hardcoded
+  GitHub palette with no light theme and no toggle, which stopped being
+  survivable once the plan-agent galleries grew a topbar whose Social tab lands
+  here — a nav bar that vanishes into a differently-styled page when you click
+  one of its own tabs is a defect, not a deferral. It now uses the shared token
+  set with light and dark blocks, the pre-paint theme script, and the same
+  toggle, reading the same `plan-theme` key: a choice made on the plans gallery
+  carries here.
+- **The same sticky topbar as the other three galleries**, with `Social`
+  marked `aria-current="page"` and per-collection counts substituted from disk.
+  `media-library` gained the corresponding substitution step.
+- **Tab hrefs are computed per page, and the Plans count follows the resolved
+  `plansDirectory`** rather than assuming `docs/plans` — a project that moves
+  it would otherwise see a wrong count and links resolving from the wrong depth.
+- **The card grid stays.** Thumbnails suit a grid in a way rows do not; only
+  the shell around them changed.
+
+### Removed
+
+- **The grid/list view toggle**, matching the other galleries — a second layout
+  to keep styled and accessible for a preference nobody asked for.
+
+### Fixed
+
+- **The theme toggle left half the page in the old palette.** Chrome keeps
+  painting a transitioned colour's pre-change value when only a custom property
+  underneath it changed, so the filter chips and the "View image" links stayed
+  light-on-dark at 3.6:1 and 2.5:1 after a switch. The decorative colour
+  transitions are gone; measured after the fix, both clear 4.5:1 in both themes.
+- **The eight per-type badge colours are one neutral badge.** They were fixed
+  to a dark background and half of them fell under 4.5:1 the moment this
+  gallery gained a light theme. Type is filterable in the toolbar above; the
+  badge only has to be readable.
+
+## v2.20.1 — 2026-07-30 — Fix share-selection's reuse check running under the wrong prefix
+
+### Fixed
+
+- **`share-selection` no longer looks up existing diff posts under the `snippet-`
+  prefix.** Phase 1c set `FILE_PREFIX` provisionally ("default `snippet`") and
+  only Phase 4 classified `CODE_RAW`, so for diff-like input the reuse lookup
+  scanned `snippet-*.html` while the post was saved as `diff-…` — the lookup
+  missed the existing diff post and the skill created a duplicate. Classification
+  now happens once, in Phase 1c before the lookup, and Phase 4 consumes the
+  already-set `CARD_TYPE` instead of re-deriving it. This matches the
+  precondition `references/reuse-check.md` has always stated ("after card type
+  and platform are known") and keeps the check ahead of the Phase 2 scrub gate
+  and the Phase 3 present-then-approve draft step, so a reusable post is still
+  offered before any of that work is spent.
+- `share-selection/references/card-population.md` gains a **Classify `CODE_RAW`**
+  section as the single source of the detection rule; its Phase 4 section now
+  only resolves paths.
+- `tests/plugins/test-skill-split-git-social.sh` check 7 asserts the ordering:
+  `FILE_PREFIX` must be bound before the reuse lookup, `CARD_TYPE` must be
+  established before it, and nothing may rebind the prefix between the lookup
+  and the save. It fails on the pre-fix ordering.
+
+## v2.20.0 — 2026-07-30 — Split the three heaviest share skills into cores plus references
+
+### Changed
+
+- **`share-explanation` 1,840 → 596 words**, **`share-session` 1,391 → 597**,
+  and **`share-selection` 1,261 → 593** — 4,492 words down to 1,786. A SKILL.md
+  body has no partial load: the moment a skill triggers, its whole body is paid.
+  Each now ships a small always-loaded core plus skill-local `references/*.md`
+  files, matching the layout `share-react/references/props-extraction.md`
+  already used.
+- New skill-local reference files:
+  `share-explanation/references/{target-resolution,synthesis-structure,card-population,bootstrap,copy-drafting}.md`,
+  `share-session/references/{session-data,card-population,draft-copy}.md`, and
+  `share-selection/references/{selection-sources,card-population}.md`.
+- **The eight plugin-level `references/` files are untouched.** Those are shared
+  infrastructure that eleven skills read, so rewiring them would ripple well
+  past this change. The `$PLUGIN_DIR/references/...` link counts in the three
+  cores are unchanged at 7, 8, and 11, and
+  `tests/plugins/test-skill-split-git-social.sh` fails if any of those numbers
+  moves.
+- No frontmatter changed. All three `description:` lines are byte-identical to
+  v2.19.2 — the description is the only trigger surface.
+
+### Why the scrub gate stayed in the core
+
+Each core keeps its `GATE RESULT: BLOCKED` hard stop with the
+`Skill(skill: "social-media-tools:security-scrub", ...)` call, its Quick
+Reference phase index, and its one-line guards (non-code-file, 80-line,
+"Tokens only — no dollar amounts"). Only procedure moved: the five-tier target
+lookup, the per-target synthesis structures, the source-precedence rules, the
+mandatory HTML escape order, and the card variable tables. A gate behind a link
+is a gate that may never load, which for these skills means publishing unscanned
+content.
+
+### Note on file counts
+
+The plan for this change budgeted two or three references per skill. The
+600-word ceiling needed five for `share-explanation` and three for
+`share-session`: the fixed floor — frontmatter, phase index, plan-mode guard,
+scrub gate, and roughly a dozen phase headings — is already ~450 words, so
+Phase 0/0b/1/3/5 detail had to move too. Nothing was summarized away; every
+relocated block is verbatim or reflowed in a reference.
+
+## v2.19.2 — 2026-07-28 — Collapse the plan-mode guard to one line
+
+### Changed
+
+- **Fourteen share skills reduced** — `media-library`, `save-artifact`,
+  `share-blog`, `share-code`, `share-explanation`, `share-github`, `share-init`,
+  `share-project`, `share-react`, `share-scan`, `share-selection`,
+  `share-session`, `share-video`, and `social-share` replace their four-line
+  `ExitPlanMode` preamble with the canonical one-line guard.
+- **`social-share` guard moved ahead of Phase 0** — it wrote `~/.claude/tmp/social-share-selection.txt`
+  in Phase 2 but called `ExitPlanMode` only in Phase 4, so filesystem state could be
+  mutated inside plan mode. Pre-existing; found in review of this change.
+- **`digest` drops the guard entirely** — the command only invokes `share-scan`,
+  which carries its own. `ToolSearch` and `ExitPlanMode` are removed from its
+  `allowed-tools`.
+
+## v2.19.1 — 2026-07-29 — Document the contextual learn-more CTA rule
+
+### Changed
+
+- **README now names the contextual learn-more invitation** that closes a generated post — one varied line naming the topic rather than generic follow boilerplate, dropped on Twitter/X and Bluesky when the character budget is tight — and points at `references/platforms.md`, where the rule and its per-platform placement live. The behavior was documented only in that reference and in the repo's root `CLAUDE.md`, which is being trimmed back to one line per plugin. Documentation only; no behavior change.
+
+## v2.19.0 — 2026-07-22 — save-artifact: accept a claude.ai artifact URL as the source
+
+### Added
+
+- **`save-artifact` now saves from a `https://claude.ai/code/artifact/<uuid>` URL**, not just a local file or an in-chat artifact. Previously an artifact that existed only at its published URL — a page from an earlier session, or one shared by the gallery — could not be pulled back down; the skill had no source to copy. The new first branch of Step 1 fetches the URL with `WebFetch` (which carries the claude.ai login and returns the page's raw HTML), strips the one-line `[Artifact …]` header and claude.ai's `<!-- frame-runtime -->` block, and writes the document to the scratchpad under a `<title>`-derived slug (disambiguated with the artifact uuid when the title is missing or generic), which then feeds the existing dated-copy and gallery-publish steps unchanged. Dropping the frame-runtime block is what keeps the saved page self-contained — it `import`s `/_runtime/*.js` paths that only resolve on claude.ai. `curl` is explicitly ruled out: it returns the SPA shell or a Cloudflare 403. A fetch with no `<!doctype` stops the skill instead of saving a partial page, and the skill now warns that both failure modes look like ordinary answers rather than errors. `WebFetch` added to `allowed-tools`.
+
+- **New Step 1b: a blocking `security-scrub` gate before any copy or publish.** Step 4 publishes into `docs/artifacts/`, which the user commits and GitHub Pages serves publicly, so a secret in a saved page becomes a public secret. The skill had no scrub at all while every sibling sharing skill in this plugin had one; the URL branch makes the gap sharper, since a fetched artifact is remote content that nobody in the session has necessarily read (claude.ai artifacts can be shared with an account, not only owned by it).
+
+### Changed
+
+- **`content-tools:artifact-to-post` no longer claims `WebFetch` cannot read claude.ai artifact URLs.** That was stated as a technical fact and is now false. It still refuses URLs — it works from a saved file — but the handoff text now says why (`save-artifact` fetches *and* scrubs) instead of implying the user must export the file by hand.
+
+## v2.18.1 — 2026-07-21 — Document `share-explanation` in the plugin README
+
+### Fixed
+
+- **`share-explanation` was missing from the README.** The skill shipped but appeared in none of the README's three listings (component table, activation table, directory tree), so it was undiscoverable from the docs. Added to all three. Docs only — no behavior change.
+
+## v2.18.0 — 2026-07-19 — media-library: assert card count against source count
+
+### Added
+
+- **`media-library` now checks its own output.** After writing `docs/media/social/index.html` it confirms the file parses and its card count matches the number of card files scanned. The gallery is rebuilt from a directory scan, and its failure mode is silent card loss — an index that writes successfully with cards missing. On a mismatch it reports the index path, the card count, and the source count, then stops instead of opening a gallery it cannot vouch for.
+
+## v2.17.5 — 2026-07-17 — Repoint write-guide plan-docs handoff to plan-agent
+
+### Changed
+
+- `plan-interview` merged into `plan-agent` 4.0.0. `write-guide` now hands plan-completion documentation to `plan-agent:documenting-plans` (was `plan-interview:documenting-plans`) in both `SKILL.md` and `references/exemplars.md`. No behavior change.
+
+## v2.17.4 — 2026-07-17 — digest: stop pointing users at a command that does not exist
+
+### Fixed
+
+- **`commands/digest.md` told the user to run `/social-media-tools:share-code`, which is not a command** — `share-code` is skill-only, so the instruction was a dead end at the exact moment the digest finished its work and handed off. It now tells the user to trigger the skill by pasting a `code-share prompt` from the digest into the chat.
+
+## v2.17.3 — 2026-07-16 — share-react registration test: stop pinning the marketplace version
+
+### Fixed
+
+- **`tests/social-media-tools/test-share-react-registration.sh` check 1 no longer hard-pins the version to `2.11.0`.** It asserted equality against a moving value, so every release since 2.11.0 has re-broken it — a test that trains people to ignore a red suite. It now asserts the entry is valid semver and `>= 2.11.0`, the release that introduced `share-react`; that floor is permanent, so bumps can't rot it. Guarding the bump itself stays with `scripts/check-plugin-versions.mjs`, which compares against `origin/main`.
+
+## v2.17.2 — 2026-07-16 — Trim skill descriptions to budget
+
+### Fixed
+
+- `skills/save-artifact` (231 chars), `skills/export-session` (207), `skills/share-code` (81-char first sentence): descriptions brought within the 200-char total and 80-char first-sentence budget.
+
+---
+
+## v2.17.1 — 2026-07-15 — export-session: stop truncating session titles mid-word
+
+Ports the title fix from `artifact-tools` v1.1.0 into this plugin's copy of `export_session.py`. `title_of` and its self-check are byte-identical across the two copies; the pair's only differences remain the two divergences documented in the artifact-tools copy (`source` basename, `title:` frontmatter), both of which exist because that copy's output is published while this one's stays on local disk.
+
+### Fixed
+
+- **`export-session` no longer cuts the session title mid-word.** The title was an 80-character slice of the first user message, which severed whatever word straddled the boundary (e.g. `...the artifact-tool always gen`). Titles now trim on a word boundary via `textwrap.shorten(width=60, placeholder="...", break_on_hyphens=False)`, so only whole words survive.
+- **A first turn that is one oversized token (a URL, a path, a hash) is kept whole** rather than sliced mid-token. Width is a target; not cutting mid-word is the rule.
+- **The `Session export` placeholder title can no longer be emitted.** With no user turn, the title comes from the session's first turn instead.
+
+### Added
+
+- **`export_session.py --self-check`** — asserts `title_of` never emits a placeholder or a mid-word cut, across short, long, hyphenated, multi-line, oversized-token, and URL inputs.
+
 ## v2.17.0 — 2026-07-08 — save-artifact: save to `.claude/artifacts`, publish to the Artifacts gallery
 
 ### Changed

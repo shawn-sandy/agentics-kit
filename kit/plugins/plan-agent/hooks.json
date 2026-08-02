@@ -2,42 +2,21 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/validate-plan-filename.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/rebuild-plans-index.py\"",
-            "timeout": 30
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\"",
+            "timeout": 60
           }
         ]
       },
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "ExitPlanMode",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/build-prototypes-index.sh\" \"${CLAUDE_PROJECT_DIR:-$PWD}\"",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/render-plan-html.py\"",
-            "timeout": 30
+            "command": "echo 'Plan mode exited. You may want to stress-test this plan before implementing it — run the plan-agent built-in Step 5b interview (or the review-plan team) to surface gaps, risks, and trade-offs.'"
           }
         ]
       }

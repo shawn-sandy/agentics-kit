@@ -8,10 +8,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Individ
 
 ## [Unreleased]
 
-> Marketplace (`agentics-kit`) remains at v4.0.0; the changes below are unreleased plugin and infrastructure work since that release. Current plugin versions: memory-tools 3.1.3, code-review 3.3.2, plan-interview 2.2.7, wcag-compliance-reviewer 1.2.3, skill-reviewer 2.2.6, code-testing-agent 3.4.4, git-agent 3.11.0, product-plans 3.4.9, settings-sync 1.0.2, social-media-tools 2.12.1, plan-agent 2.7.0.
+> Marketplace (`agentics-kit`) remains at v4.0.0; the changes below are unreleased plugin and infrastructure work since that release. Current plugin versions: memory-tools 4.0.0, code-review 3.3.3, wcag-compliance-reviewer 1.2.3, skill-reviewer 2.2.8, code-testing-agent 3.4.4, git-agent 4.6.0, product-plans 3.4.11, settings-sync 1.0.2, social-media-tools 2.18.1, plan-agent 4.3.1, team-defaults 0.2.0, artifact-tools 1.3.0, content-tools 1.0.0. The live list is the [Plugin Reference Table](./README.md#plugin-reference-table).
 
 ### Added
 
+- **content-tools plugin (1.0.0)** — New `documentation` plugin whose `artifact-to-post` skill converts a local HTML artifact, pasted HTML, or a Markdown file into a **draft** static-site post (Astro first). Each block takes the highest rung of a fidelity ladder that holds, artifact CSS is prefixed to a wrapper so it cannot collide with site tokens, and an MDX-safety pass runs after the prose rewrite. Blocking `security-scrub` gate before any write (#440)
+- **git-agent `merge` skill + `merge?` hook (4.5.0)** — Checks PR readiness (`MERGEABLE`, green checks, lint gate) and merges only with explicit approval, never passing `--delete-branch`. A `UserPromptSubmit` hook routes a bare `merge?` prompt to the skill deterministically (#441)
+- **git-agent `/merge-bg` (4.6.0)** — Background squash merge of one fully green PR via the new `agent-merge` subagent; dispatching the command is the approval, and anything ambiguous comes back as a report instead of a merge (#444)
+- **git-agent `/ship-ci-bg` (4.5.0)** — Background CI watcher (`agent-ship-ci`) that polls checks on an open PR and reports the outcome without holding the session (#442)
+- **plan-agent `build` skill (4.1.0)** — Implements a plan that already exists: walks the steps, ticks the spec, re-renders, and owns the acceptance-criteria, end-to-end-verification, and completion-checklist gates. Step 8's `Implement now` delegates here (#435)
+- **Runnable output checks** — Every HTML-generating and publishing skill now ends in a runnable check on its own output (#431), and every plan carries a runnable completion check (#428)
+- **git-agent PR hardening** — PR test plan, lint gate, refuted-finding replies (#433), and a self-review of the diff before pushing in `ship` (#434)
 - **Distribution pipeline** — Daily publish pipeline that mirrors plugins to the `agentics-kit` distribution repo, including URL transformation (`agentics` → `agentics-kit`), root-file copying, and CI hardening (#293, #294, #295)
 - **plan-agent `setup-sites`** — Scaffolds the GitHub Pages deploy pipeline (workflow, `.nojekyll`, hub, preview script) into any repo so `docs/` HTML publishes to a public URL (2.7.0, #333)
 - **plan-agent `build-proposal`** — Turns a vague idea into a decision-complete `docs/proposals/<slug>.md` via an 8-step research→decide loop and right-sizing gate, then hands off to implementation-plan (2.5.0, #329)
@@ -27,6 +34,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Individ
 
 ### Changed
 
+- **CLAUDE.md and `.claude/rules/` rightsized for Claude 5 generation models** — Applied the context-engineering guidance (rules→judgment, repetition→single mentions, upfront context→progressive disclosure) across `CLAUDE.md` and all six rule files: 458 → 288 lines, and `CLAUDE.md` from ~800 to 261 words. Dropped the plugin catalog table (the generated [Plugin Reference Table](./README.md#plugin-reference-table) is the source of truth and CLAUDE.md carried a hand-synced second copy), the Claude Code format templates in `plugin-patterns.md`, and the 30-line inline copy of Anthropic's effective-skills checklist in `skill-authoring.md`, which is now linked so it cannot go stale against the upstream doc. `test-claude-md-budget.sh` loses checks 2 and 3, which existed only to police the removed table; the word budget remains
+- **plan-agent 8.1.0** — `prompt` drafts for Claude 5 generation models: a new section 0 in `best-practices-reference.md` carries the five then→now context-engineering shifts and the practices a draft should stop doing, Phase 3 reads it before choosing layers, and Phase 4 runs a calibration pass over the assembled draft. Also fixes the reference having been orphaned — it shipped as the technique catalog with no file linking it, so it never loaded
+- **plan-agent 8.0.0** — BREAKING: renamed the `write-prompt` skill and command to `prompt`; invoke as `/plan-agent:prompt`. Callers delegating with `Skill(skill: "plan-agent:write-prompt")` must switch to `plan-agent:prompt`
+- **plan-agent 4.0.0** — BREAKING: absorbed the `plan-interview` plugin. `documenting-plans`, `markdown-to-html`, `plan-status`, `plan-maintenance`, `deep-grill`, and the ExitPlanMode stress-test nudge now ship under `plan-agent`; invoke them as `/plan-agent:<name>`. `plan-interview` is de-registered from the marketplace and recoverable from git history (#426)
+- **memory-tools 4.0.0** — BREAKING: renamed the `agentic-memory-doctor` skill to `agentic-memory-management`. Update `@import` paths from `skills/agentic-memory-doctor/SKILL.md` to `skills/agentic-memory-management/SKILL.md` (#438)
+- **Plugin scoping** — Reviewer agents scoped, commands collapsed onto their skills, and hooks gated (#422)
+- **plan-agent `write-prompt`** — BREAKING: renamed the `refine-prompt` skill to `write-prompt`; invoke as `/plan-agent:write-prompt` (3.0.0)
 - **plan-agent `refine-prompt`** — BREAKING: renamed `craft-prompt` to `refine-prompt` (2.0.0, #306)
 - **social-media-tools card templates** — Added a `--card-width` CSS token to all card templates (#303)
 - **Skill frontmatter** — Optimized descriptions to the three-part format (short label + capability + trigger phrase, ≤200 chars) across plugins (#328); surfaced `write-guide` in discovery and backfilled version + changelog (#330)
@@ -35,11 +49,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Individ
 
 ### Fixed
 
+- **Removed-plugins list drift** — The de-registered plugin list is written twice and had drifted in both directions: `issue-agent` was in `marketplace.json`'s `removed` array but missing from `.claude/rules/removed-plugins.md`, and `plan-interview` was the reverse. The rule file is the copy that matters — it loads unscoped in every session so the re-add confirmation gate fires before any plugin file is opened, so the missing `issue-agent` row was the gate with a hole in it for six weeks, not cosmetic drift. Both lists now hold the same eight names
+- **`plan-hygiene.md` pointed at a deleted command** — The rule told you to run `/plan-hygiene` before committing, but that command left with the `plan-interview` plugin (removed 2026-07-17) and `plan-agent` never absorbed it. Replaced with the `verb-target` naming convention stated inline
+- **Contradicting deferred-tool guidance** — `plugin-patterns.md` said *not* to explain the `ToolSearch` mechanic in skill bodies while `skill-authoring.md` supplied a verbatim block to paste; both load on `kit/plugins/**/skills/**`. No shipped skill carried the block and 41 carry the terse plan-mode guard, so `skill-authoring.md` was the stale side and its section is removed
+- **Artifacts gallery merge conflicts** — `docs/artifacts/index.html` is now registered against the existing `plans-index` merge driver in `.gitattributes`, so two branches each saving an artifact no longer conflict on the regenerated index. Both galleries emit the same `<a class="gallery-card">` markup, so one driver serves both. The count patch also learned the artifacts gallery's `items` noun and now rewrites **every** rendered total rather than the first — both galleries print the count twice (a header and a `<span>` footer), and patching one left the page contradicting itself. Adds `tests/plugins/test-merge-gallery-index.sh`, wired into `check-plugin-versions.yml` — the first coverage either merge driver has had
 - **HTML plans responsive layout** — Retrofit responsive CSS into every HTML plan and hardened the skeleton (plan-agent 2.4.1, #321); moved the PDF button and status badge below the title for responsiveness (#322); set pipeline-node padding to 1rem (#298)
 - **CI version bump** — Reverted to direct-push version bump with ruleset bypass (#286)
 
 ### Tests
 
+- Added `tests/plugins/test-removed-plugins-sync.sh`, wired into `check-plugin-versions.yml` — asserts `marketplace.json`'s `removed` array and `.claude/rules/removed-plugins.md` name the same plugins, and that no removed plugin is simultaneously registered as active. Nothing enforced this before, which is how the drift above went unnoticed. Each check was verified against a deliberately broken tree rather than only passing on green
 - Added `tests/pages/test-docs-hub.sh` smoke test for the landing hub; updated `tests/pages/test-root-redirect.sh` to validate hub structure instead of redirect behavior
 
 ---

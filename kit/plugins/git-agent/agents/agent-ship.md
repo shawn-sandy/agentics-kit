@@ -30,16 +30,7 @@ Follow these steps in strict order. **STOP immediately after step 8.**
 
 ### Step 0: Exit Plan Mode
 
-Call `ExitPlanMode` immediately and silently — always, unconditionally, before
-any other action. Do not prompt the user. Staging, committing,
-pushing, and creating a pull/merge request are mutations and cannot proceed
-inside plan mode.
-
-`ExitPlanMode` is a deferred tool whose schema must be loaded before it can be
-called. Use `ToolSearch` with `select:ExitPlanMode` first, then call
-`ExitPlanMode`. Both steps happen silently with no user-visible output.
-
-**Error handling:** If `ExitPlanMode` returns the exact error `"You are not in plan mode"`, treat that as **success** — plan mode was already off. Do not abort or surface the error to the user; continue to the next step.
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 ### Step 1: Pre-flight Guards
 
@@ -107,6 +98,33 @@ git commit -m "<message>"
 Report the commit hash and message on success.
 
 **If a pre-commit hook fails:** report the hook's output verbatim and **STOP**. Do not retry. Do not use `--no-verify`. Do not modify the staged files. Let the parent session surface the failure to the user.
+
+### Step 4.5: Self-Review Before Push
+
+Always runs. There is no user to prompt in a background ship, so there is no opt-out.
+
+Resolve `<base>` using the procedure in **Step 7: Detect Base Branch**, then run:
+
+```
+git diff <base>...HEAD
+```
+
+If no base branch resolves, note "Skipping self-review: cannot resolve a base branch." in the final report and continue to Step 5.
+
+Critique the diff as a hostile reviewer would. Check specifically for:
+
+1. **Dropped accessibility attributes** — removed `aria-*`, `role`, `alt`, or live-region markup that the previous version had.
+2. **Double-escaping or encoding changes** in generated output — HTML entities escaped twice, or raw text now passing through an escape it did not before.
+3. **Edge cases in string parsing or truncation** — off-by-one slices, splitting on a character that occurs inside the data (e.g. hyphens), unhandled empty input.
+4. **Responsive or desktop regressions** in image or layout changes — a breakpoint, `srcset`, width, or height silently changed or halved.
+
+**This step is report-only. Do not fix anything.** You run unattended with no user watching, and `disallowedTools` denies `Write`, `Edit`, and `NotebookEdit` by design — a background ship agent must never rewrite source. Do not attempt to edit files, and do not route around the restriction with `Bash` (no `sed -i`, no heredoc rewrites, no `git apply`). If a finding warrants a code change, that is the parent session's call, not yours.
+
+This step never blocks the ship. It reports; the ship proceeds either way.
+
+**Report every finding in the final summary**, each with file, line, and what breaks. The parent session cannot see this step's reasoning, so an unreported finding is a silently shipped regression. If there are none, report "Self-review: no findings."
+
+The foreground `ship` skill does fix findings before pushing, because a user is present to see the edits. That asymmetry is deliberate — do not mirror the skill's amend step here.
 
 ### Step 5: Push
 
@@ -204,7 +222,7 @@ For GitLab, run:
 glab mr create --title "<title>" --description "<body>"
 ```
 
-Report the PR/MR URL and **STOP**.
+Report the PR/MR URL, followed by the Step 4.5 self-review findings — what was fixed and what remains outstanding, or "Self-review: no findings." — and **STOP**.
 
 ---
 

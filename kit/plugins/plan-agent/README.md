@@ -21,20 +21,23 @@ Installers get on-demand planning with argument support, issue ingestion, built-
 | Component | Type | Activation |
 |-----------|------|-----------|
 | `implementation-plan` | Skill | Command (`/plan-agent:implementation-plan <objective>`) or auto-activates on plan-document intent |
-| `build-proposal` | Skill | Command (`/plan-agent:build-proposal <idea>`) or auto-activates on idea / "should-we" / compare-and-align intent |
+| `build-proposal` | Skill | Command (`/plan-agent:build-proposal <idea>`) or auto-activates on idea / "should-we" / compare-and-align intent — converges on a saved prompt at `docs/prompts/proposal-<slug>.md` |
+| `build` | Skill | Command (`/plan-agent:build [<plan>] [<objective>]`) or auto-activates on "implement / build this plan" intent — implements a plan and runs its gates; with no plan named, the command form authors one first through proposal → plan → review |
 | `review-plan` | Skill | Manual only — invoke as `/plan-agent:review-plan [plan-path]` or auto-activates when you ask to review a plan (requires Agent Teams) |
 | `review-plan-bg` | Command | Background dispatcher — invoke as `/plan-agent:review-plan-bg <path>` to run the review team without blocking |
 | `finalize-plan` | Skill (`disable-model-invocation`) | Manual only — invoke as `/plan-agent:finalize-plan [plan-filename.html] [--all]` |
-| `refine-prompt` | Skill (`disable-model-invocation`) | Manual only — invoke as `/plan-agent:refine-prompt [intent]` |
+| `prompt` | Skill (`disable-model-invocation`) + Command | Invoke as `/plan-agent:prompt [type] [intent] [--out <path>] [--answers-gathered]`; a leading `system`/`task`/`creative`/`analytical` token pins the type. A fifth token, `proposal`, is caller-only — it counts just alongside `--answers-gathered`, since Phase 2 has no proposal question set. The command wrapper also makes it reachable from other skills, which the flag alone blocks |
 | `plans-library` | Skill | Auto-activates on "browse plans", "view plan history", "open plans index" intent |
 | `plans-open` | Skill | Auto-activates on "open the gallery", "show the plans page" — opens without rebuilding |
 | `setup-sites` | Skill | Command (`/plan-agent:setup-sites`) or auto-activates on "set up / publish GitHub Pages" intent — scaffolds the deploy pipeline into any repo |
 | `prototype` | Skill | Command (`/plan-agent:prototype <plan.html \| idea \| image \| figma-url>`) or auto-activates on "prototype this plan / idea / screenshot" intent — generates a runnable static-HTML prototype under `docs/prototypes/` |
-| `validate-plan-filename` | Hook (`PostToolUse`) | Fires automatically on every `Write`/`Edit` — validates plan filenames |
-| `rebuild-plans-index` | Hook (`PostToolUse`) | Fires on `Write`/`Edit`/`MultiEdit` to non-index `.html` plans — auto-regenerates gallery |
-| `build-prototypes-index` | Hook (`PostToolUse`) | Fires on `Write`/`Edit`/`MultiEdit` to `docs/prototypes/` — auto-regenerates the prototypes gallery |
+| `dispatch` | Hook (`PostToolUse`) | The plugin's only registered hook. Fires on `Write`/`Edit`/`MultiEdit`, path-gates once, and fans out to the four below only for plan/prototype writes |
+| `validate-plan-filename` | Child of `dispatch` | Validates plan filenames; exits 2 to block a badly-named plan |
+| `rebuild-plans-index` | Child of `dispatch` | Regenerates the plans gallery for non-index `.html` plans |
+| `build-prototypes-index` | Child of `dispatch` | Regenerates the prototypes gallery for `docs/prototypes/` writes |
+| `check-prototype-drift` | Child of `dispatch` | Reports when a prototype has drifted from its own data model or its plan's copy |
 
-**Built-in interview:** the planning workflow includes a structured interview step (Step 5b) that stress-tests your plan before committing. For deeper standalone reviews, install `plan-interview` separately. Note: `plan-interview:plan-status` currently operates on `.md`/YAML plans only and does not support `.html` plans yet.
+**Built-in interview:** the planning workflow includes a structured interview step (Step 5b) that stress-tests your plan before committing. For deeper reviews, use the `review-plan` Agent Team. Note: `plan-agent:plan-status` currently operates on `.md`/YAML plans only and does not support `.html` plans yet.
 
 ## Installation
 
@@ -69,6 +72,19 @@ Invoke explicitly via `/plan-agent:implementation-plan <objective>`, or let it a
 /plan-agent:implementation-plan docs/plans/distribute-skills-via-skill-box-catalog.md
 ```
 
+At Step 8 the skill offers to open a tracking issue for the finished plan,
+delegating to `git-agent:create-issue` with the plan as its source and
+recording the resulting URL as the spec's `issue:` frontmatter key. The
+renderer turns that key into a `plan-issue` meta tag and a header link on the
+HTML, so the plan and its ticket stay reachable from each other. When the plan
+is later marked `completed` — by `build`'s completion gate or by
+`finalize-plan` — that link is what gets acted on: the skill offers to close
+the ticket with a summary comment, or, if the plan lands `in-progress`
+instead, posts the summary as a comment and leaves it open. It is
+skipped when the spec already carries `issue:`, and if `git-agent` is not
+installed the skill notes it in one line and continues — issue creation never
+blocks the plan flow.
+
 Passing a `.md` plan path enters **conversion mode**: the markdown is treated as authoritative, pre-validated content — Clarify/Align/Interview are skipped, sections map 1:1 to the HTML structure, frontmatter (`created`, `status`) carries over, the output filename swaps the extension to `.html`, and Step 8 asks whether to keep or remove the source `.md`. If the path is missing locally, the skill checks the plan roots and the default branch before asking for direction.
 
 **Full invocation syntax:**
@@ -89,7 +105,7 @@ Passing a `.md` plan path enters **conversion mode**: the markdown is treated as
 | `--template <name>` | Reserved — only `default` is currently supported; additional variants are planned |
 | `--dir <path>` | Override directory resolution; write the plan to this path |
 | `--priority <level>` | Write `priority` to plan HTML metadata (`low`, `medium`, `high`, `critical`) |
-| `--workflow` | Always generate a workflow prompt, bypassing the complexity heuristic |
+| `--workflow` | Always generate a workflow prompt, bypassing the complexity heuristic (writes `workflow: always`) |
 
 **Examples with flags:**
 
@@ -134,12 +150,13 @@ Every plan is a single self-contained `.html` file (no CDN links, no external as
 - **Status badge** — colour-coded: grey = todo, amber = in-progress, green = completed
 - **Objective card** — prominent highlighted block at the top
 - **Implement prompt** — Copy button produces a concise action-oriented prompt with plan status, step/criteria progress counts, and numbered instructions to implement directly from the plan file
-- **Goal prompt** *(expandable)* — collapsible "Pursue as goal" section that reveals an outcome-driven prompt ("Achieve this goal: … — use the plan as reference, but optimize for the outcome"), giving the implementer latitude to deviate from the steps when a better path to the same outcome exists. **Always present** — every plan gets one, no flag required. References the plan by path like the implement prompt — self-contained, no repo-local script required
-- **Workflow prompt** *(expandable)* — collapsible "Run as workflow" section that reveals a copy-paste prompt for parallel subagent orchestration via `/workflows`. Generated automatically for complex plans (5+ files across 3+ directories, repetitive per-file changes, parallelizable steps, or adversarial review needs) or explicitly with `--workflow`
+- **Goal prompt** *(expandable)* — collapsible "Pursue as goal" section that reveals an outcome-driven prompt ("Achieve this goal: … — use the plan as reference, but optimize for the outcome"), giving the implementer latitude to deviate from the steps when a better path to the same outcome exists. **Always present** — every plan gets one, no flag required. On plans that also get a workflow prompt, it adds "Fan out across parallel subagents where that serves the outcome" after the latitude clause and the section is labelled "Pursue as goal — optimize for the outcome, in parallel", so fan-out is offered as a license the goal grants rather than a method fixed before the work is understood. References the plan by path like the implement prompt — self-contained, no repo-local script required
+- **Workflow prompt** *(expandable)* — collapsible "Run as workflow" section that reveals a copy-paste prompt for parallel subagent orchestration via `/workflows`. Generated automatically only when the plan touches 4+ files across 2+ top-level directories. The other complexity triggers — repetitive per-file changes, parallelizable steps, adversarial review needs — are not detected automatically; opt in with `--workflow` or `workflow: always`
 - **Step cards** — numbered, each with an expandable *Verify* disclosure
 - **Interactive checkboxes** — acceptance criteria the user can tick in the browser, with a live progress bar
 - **Wish List** — blue-sky / visionary next-steps rendered with a distinct dashed-border treatment
 - **Collapsible sections** — Next Steps and Unresolved Questions use `<details>` for progressive disclosure
+- **Prototype link** *(conditional)* — when the spec's frontmatter carries a `prototype:` key (a repo-relative path, written by `/plan-agent:prototype`), the header actions row gains a **View prototype** link and the `<head>` gains `<meta name="plan-prototype">`. The href is computed with `path.relative()` from the rendered plan's own output directory, so it resolves from a custom or nested `plansDirectory` — never a hard-coded `../prototypes/`. The plans gallery reads the same meta tag and shows a text-bearing `prototype` chip on the card. A spec without the key renders exactly as before
 
 Open the `.html` file directly in any browser. No server required.
 
@@ -239,14 +256,14 @@ When invoked without arguments, prompts for the plan file. The skill:
 
 **Sweep mode (`--all`)** finds plans that are implemented but never marked completed. It scans the plans directory for every plan carrying a `<meta name="plan-status">` tag whose value is `todo` or `in-progress` (non-plan HTML without the tag is ignored), runs the cheap token-evidence scan on each, and presents a candidate table — plans with 80%+ evidence are flagged as "done but not marked". One multi-select prompt picks which plans to finalize (plus a single criteria mode for the whole batch); full per-criterion verification and the objective test then run only on the selected plans before the status writes.
 
-#### `refine-prompt` — Manual invoke only
+####  `prompt` — Manual invoke only
 
 Interviews users about their prompting need and generates a copy-pasteable AI prompt grounded in [Anthropic's official Claude Prompting Best Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices). Applies the right combination of techniques (clarity, XML structure, role assignment, few-shot examples, chain-of-thought scaffolding, and output formatting) based on the classified prompt type.
 
 ```
-/plan-agent:refine-prompt
-/plan-agent:refine-prompt system prompt for a customer support chatbot
-/plan-agent:refine-prompt refactor Python code task prompt
+/plan-agent:prompt
+/plan-agent:prompt system prompt for a customer support chatbot
+/plan-agent:prompt refactor Python code task prompt
 ```
 
 **Before / after** — a vague request in, a structured prompt out:
@@ -297,8 +314,26 @@ The skill runs a six-phase pipeline:
 | `task` | Clarity/directness, XML structure (`<context>`, `<example>`), thinking/CoT scaffolding, output format |
 | `creative` | Role assignment, tone/voice instructions, context/motivation, output format, positive framing |
 | `analytical` | Long-context patterns (`<document>`, `<quote>`), thinking/CoT, self-check, output format |
+| `proposal` | Long-context grounding (`<context>`, `<finding>`, `<decisions>`), comparison tables, positive framing, output format |
 
-Invoke only via `/plan-agent:refine-prompt` — auto-activation is disabled because "prompt" is too common a word in coding contexts.
+Invoke only via `/plan-agent:prompt` — auto-activation is disabled because "prompt" is too common a word in coding contexts. `disable-model-invocation: true` blocks *programmatic* `Skill()` invocation too, not merely ambient activation, so a thin `commands/prompt.md` wrapper exists to let other skills reach it; the flag stays on. The wrapper **reads `skills/prompt/SKILL.md` by path rather than delegating with `Skill(skill: "plan-agent:prompt")`**: the command shadows the skill of that name, so delegating would return the wrapper again and none of the seven phases would load.
+
+**Core plus references.** The skill body is a 343-line core; the per-run detail loads on demand from `references/` — `best-practices-reference.md` (the authoritative technique catalog, led by section 0's Claude 5 calibration), `interview-questions.md` (Phase 2's four type-specific question sets), `structuring-and-drafting.md` (Phase 3's seven generic XML layers, Phase 4's path resolution and writing rules), `saving-prompts.md` (Phase 7's directory precedence and filename derivation), plus the five `<type>-prompt-template.md` files. A single run reads section 0, one question set, and one template.
+
+**Drafting is calibrated for Claude 5 generation models.** Phase 3 reads section 0 of `best-practices-reference.md` before choosing layers, built from [the new rules of context engineering](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models). The technique matrix still selects *which* layers apply; section 0 decides how much each earns — trust over constraint, one authoritative source per instruction, an output contract in place of stacked examples, and hard constraints only at boundaries that are genuinely critical. Phase 4 then runs a calibration pass over the assembled draft: cut duplicated instructions, drop scaffolding the interview never asked for, and prefer a schema, failing test, or mockup over prose describing one. Every template slot still ships, but `system`'s `<constraints>` block and `task`'s `<example>` and `<thinking>` blocks are optional — deleted rather than filled with an invented guardrail or filler reasoning step. Pinned by `tests/plugins/test-prompt-calibration.sh`. What stays in the core is what `tests/plugins/test-write-prompt-proposal-type.sh` pins per phase: the `--out` contract, the living-document rules, the proposal framing line, the clarify-menu exclusion, the `--answers-gathered` bypass, and Phase 3's proposal-grounding layer.
+
+**A leading type token pins the type.** If the first token of `$ARGUMENTS` exactly matches one of the four author-facing type names, that is the type and Phase 1 does not infer — `/plan-agent:prompt creative a bedtime story about a lighthouse keeper`. Bare intent text still infers as before. The fifth name, `proposal`, is honoured only when `--answers-gathered` rides along; typed alone it falls through to the clarify menu, because its interview cannot run without a caller supplying the answers. The type token and both flags are stripped before the remaining text is read as the intent.
+
+**An inferred type is confirmed before Phase 2.** The type selects the technique matrix *and* the whole type-specific question set, so a wrong type means the wrong interview, discovered only after it has been answered. Exactly one `AskUserQuestion` fires: the four-option clarify menu when the input does not clearly match a type, or — when it does — a four-option gate offering **Looks right** plus the three other author-facing types, so changing the type needs no second question. Both are skipped when the type arrived as a leading token, or when `--answers-gathered` is present. In a non-interactive session the skill proceeds rather than blocking — Phase 2's interview needs the same tool — and lists the assumed answers as a correctable table.
+
+**The `proposal` type is caller-driven.** It is never offered in the clarify menu — `plan-agent:build-proposal` names it explicitly, passing the proposal content plus two flags:
+
+| Flag | Effect |
+|------|--------|
+| `--out <path>` | Write to exactly this path, overriding Phase 7's own directory resolution **and** its 3-5 word intent-slug derivation. The caller dictates the path so both sides agree by construction rather than by coincidence. |
+| `--answers-gathered` | Skip the Phase 2 interview entirely — zero `AskUserQuestion` calls. The caller already resolved every decision with the human. |
+
+Proposal prompts are living documents: they carry `status:` (`gathering` | `converged`), `modified:`, and `generated-sha:` frontmatter, use the date-free filename `proposal-<slug>.md`, and are rewritten **in place** on later rounds. Before overwriting, the skill compares the body's sha256 against the recorded `generated-sha:` and asks first when they differ — a hand edit. The check is anchored to that key rather than to a git baseline because `build-proposal` only *offers* to commit each round, so an uncommitted previous round would otherwise look hand-edited every time.
 
 #### `plans-open` — Auto-activates
 
@@ -334,6 +369,23 @@ prototype this plan
 
 Given a plan path it extracts the data model directly; given a raw idea it runs a 3-question interview (entity, action, success signal). Given an **image** it reads the mockup/screenshot and infers the model from the UI shown; given a **Figma URL** it loads the Figma MCP tools to read a screenshot + layer metadata and infers the same way (asking for a screenshot if no Figma MCP server is connected). It then echoes the derived model back for confirmation and writes `docs/prototypes/<verb-target>.html`.
 
+#### `build` — Command or auto-activate
+
+Implements a plan and runs it to done. `implementation-plan` authors the plan and stops; `build` picks it up — in the same session or three days later — walks its steps, ticks the markdown spec, re-renders the HTML, and runs the three completion gates. `status: completed` is written only after end-to-end verification passes, and the skill stops without committing.
+
+Named no plan, the **command form** authors one instead of stopping: it asks whether to start with a proposal or go straight to plan authoring, delegates to `build-proposal` and `implementation-plan`, and implements what comes back. Model invocation is unchanged — it still requires an existing plan and routes to `/plan-agent:implementation-plan` when there is none.
+
+```
+/plan-agent:build docs/plans/add-fitness-tracker.md
+/plan-agent:build add-fitness-tracker.html
+/plan-agent:build add a health check endpoint
+/plan-agent:build --dir tmp/plans
+/plan-agent:build
+implement the plan at docs/plans/add-fitness-tracker.md
+```
+
+With an objective and no path it skips discovery entirely and enters the chain. With neither, it **offers** the newest `todo` / `in-progress` specs in the plans directory (skipping `archive/`) — at most three, plus `None of these — author a new plan`, stating how many were suppressed — rather than adopting one silently. `--dir <path>` overrides the plans directory; an explicit path is honored as given, so plans outside the default root resolve without it, and a path that does not resolve stops rather than authoring a plan on a typo. A dirty working tree is surfaced before any of this runs; once a plan is resolved, an already-`completed` plan prompts rather than being silently redone and `[x]` steps are resumed past rather than reapplied.
+
 ### Hooks
 
 #### Filename validation (automatic)
@@ -354,11 +406,30 @@ HTML plans with `<meta name="plan-status" content="completed">` are skipped (no 
 
 #### Gallery index rebuild (automatic)
 
-The `rebuild-plans-index` hook fires on every `Write`/`Edit`/`MultiEdit` to a non-`index.html` `.html` file inside the configured plans directory. It calls `build-index.sh` to regenerate the gallery index automatically. Always exits 0 so index-rebuild failures never block plan writes.
+`rebuild-plans-index` runs when `dispatch.py` sees a write to a non-`index.html` `.html` file inside the configured plans directory. It calls `build-index.sh` to regenerate the gallery index automatically. Always exits 0 so index-rebuild failures never block plan writes.
 
 #### Prototypes gallery rebuild (automatic)
 
-The `build-prototypes-index` hook fires on every `Write`/`Edit`/`MultiEdit` and self-gates on the written path: it only rebuilds when the write targeted `docs/prototypes/`, leaving the plans gallery untouched. It calls `build-prototypes-index.sh` to regenerate `docs/prototypes/index.html` (newest-first, escaped). Always exits 0.
+`build-prototypes-index` runs when `dispatch.py` sees a write under `docs/prototypes/`, leaving the plans gallery untouched. It calls `build-prototypes-index.sh` to regenerate `docs/prototypes/index.html` (newest-first, escaped). Always exits 0.
+
+#### Prototype drift check (automatic)
+
+`check-prototype-drift` runs after `build-prototypes-index` on the same `docs/prototypes/` write. It reads the prototype's `<script type="application/json" id="proto-model">` block — the durable copy of the data model `/plan-agent:prototype` derived — and compares it two ways:
+
+1. **Against the prototype's own DOM** — the `<th data-field>` headers and form field `name`/`id` attributes. This is the check that catches a human hand-editing the prototype.
+2. **Against its plan's copy** — the `proto-model:` frontmatter of the Markdown spec named in the prototype's `<meta name="proto-source">`.
+
+Each warning names both files, the diverging field, and what to re-run. It is deliberately narrow: structure only (copy, styling, and seed-value edits are not drift), and one direction only — a hand-edited plan desyncs with no signal, because plans are user-owned prose rather than generated output.
+
+It stays silent whenever there is nothing to compare — no model block, no plan, no `proto-model:` line, malformed JSON, or a `proto-source` resolving outside the plans directory — and **always exits 0**, so a drift report about one plan never interrupts work on another.
+
+The comparison only reports; reconciling the two sides is a judgment call left to a human.
+
+#### Hook dispatch
+
+`hooks.json` registers exactly one PostToolUse hook: `hooks/dispatch.py`. Registering the four hooks separately spawned four interpreters on *every* file edit in *every* session, purely so each could discover the file was not a plan and exit. The `matcher` field is a tool-name regex and cannot express a path condition, so the gate lives in `dispatch.py`: it reads the payload once, does one cheap path check, and for the common case exits without spawning anything.
+
+The children remain independently runnable and testable — each re-applies its own filter — so `python3 hooks/validate-plan-filename.py < payload.json` still works standalone. The children share the dispatcher's single 60s budget (they run sequentially), rather than each holding an independent one as before.
 
 ### Plans directory resolution
 
@@ -419,10 +490,12 @@ plan-agent/
       reference/
         SKELETON.html       — Legacy full-plan HTML template (kept for reference/tests)
         SKELETON.md         — Markdown plan-spec starter (the format build-plan-html.mjs parses)
+    build/
+      SKILL.md              — Implements an existing plan: steps, spec ticks, three gates, re-render
     build-proposal/
-      SKILL.md              — Idea→proposal loop (Tier gate, 8 steps, artifact resolver)
+      SKILL.md              — Idea→prompt loop (Tier gate, 8 steps, dual-write resolver)
       references/
-        artifact-shape.md             — Canonical proposal-artifact template
+        artifact-shape.md             — Canonical proposal shape + section-to-slot mapping
         operating-principles.md       — Ten principles + capability map
         example-design-md-spec-alignment.md   — Trimmed Tier 2 worked exemplar
         example-proposal-builder-skill.md     — Trimmed recursive worked exemplar
@@ -439,11 +512,21 @@ plan-agent/
       SKILL.md              — Open existing gallery without rebuild
     setup-sites/
       SKILL.md              — Scaffold the GitHub Pages deploy pipeline into any repo
+    prompt/
+      SKILL.md              — 7-phase prompt authoring (classify, interview, structure, draft, save)
+      references/
+        system-prompt-template.md     — system-type template
+        task-prompt-template.md       — task-type template
+        creative-prompt-template.md   — creative-type template
+        analytical-prompt-template.md — analytical-type template
+        proposal-prompt-template.md   — proposal-type template (11 proposal-shaped slots)
+        best-practices-reference.md   — Anthropic prompting guidance
   agents/
     plan-reviewer-*.md      — Seven reviewer agent definitions (5 core + 2 UI-conditional)
     agent-review-plan.md    — Background agent for fire-and-forget review
   commands/
     review-plan-bg.md       — Background review dispatcher command
+    prompt.md               — Skill wrapper unblocking programmatic invocation
   templates/
     plans-gallery.html      — Static gallery template (substituted by plans-library)
     pages/
@@ -451,10 +534,11 @@ plan-agent/
       hub.html              — Parameterized landing-hub template (setup-sites)
       serve-docs.sh         — Local docs/ preview server (setup-sites)
   hooks/
-    validate-plan-filename.py  — PostToolUse filename enforcement script
-    rebuild-plans-index.py     — PostToolUse gallery index auto-rebuild
+    dispatch.py                — The one registered PostToolUse hook; path-gates, then fans out
+    validate-plan-filename.py  — Filename enforcement script (child of dispatch)
+    rebuild-plans-index.py     — Gallery index auto-rebuild (child of dispatch)
     build-index.sh             — Shell entry point for gallery rebuild
-  hooks.json                — Hook registration (Write|Edit and Write|Edit|MultiEdit matchers)
+  hooks.json                — Hook registration (one PostToolUse entry: dispatch.py)
   README.md
   CHANGELOG.md
 ```
@@ -467,28 +551,62 @@ Command-invocable via `/plan-agent:implementation-plan <objective>` and model-in
 
 - **Invocation & Arguments** — on command invocation, reads `$ARGUMENTS` and parses objective + flags (`--quick`/`--no-clarify`/`--no-align`/`--no-interview`/`--type`/`--template`/`--dir`/`--priority`); on model invocation, derives the objective from conversation context and runs the full workflow by default
 - **Workflow Steps 1–8** — Clarify, Create, Frontmatter, Rename, Align, Interview (Step 5b), Commit, Status, Open
-- **Implement-now gates** (Step 8) — when implementing in-session, three sequential gates run before completion: an **acceptance-criteria gate** (verify and check off each criterion), an **end-to-end verification gate** (run the plan's objective-verification test + walk the Verification section; on failure, fix and re-verify up to 3 times), and a **completion-checklist gate** (confirm step TODOs, criteria, and status)
+- **Implement-now handoff** (Step 8) — `Implement now` delegates to the `build` skill, which owns the implementation loop and its three gates. `implementation-plan` itself never writes source files; its Scope Constraint is never lifted
 - **Markdown-spec pipeline** — the agent authors a compact Markdown plan spec (the committed source of truth) and renders it deterministically with the bundled `scripts/build-plan-html.mjs`; the renderer owns all presentation (CSS, JS, meta tags, derived implement/goal/workflow prompts, effort level, file-tree) *and* all progress state: `- [x]` criteria bullets, `[x]` step markers, and an optional `## Completion Report` section render as checked boxes, completed step cards, the derived completion checklist, and the report list — status/checkbox changes are Markdown edits plus a re-render, never HTML surgery
 - **Guidelines library** — `guidelines/planning-principles.md`, `section-catalog.md`, `right-sizing.md`, and `writing-style.md` drive judgment-based structure: the required core (objective, steps, acceptance criteria, verification) is always present, everything else earns its place per plan (`minimal`/`adr`/`spike` ship as right-sizing guidance, not extra templates)
 - **Spec starter** — `reference/SKELETON.md` is the copyable spec skeleton in the exact format the renderer parses
+
+### `build` Skill
+
+Command-invocable via `/plan-agent:build [<plan>] [<objective>]` and
+model-invocable on "implement the plan at …" intent. It is the **downstream**
+layer to `implementation-plan`: that skill decides *how* and stops; `build`
+executes it — and, from the command form only, can enter the authoring chain
+when no plan was named.
+
+- **Input** — a `.md` spec or `.html` plan path (resolved as given, then by
+  basename under the plans directory), a free-text objective, or no argument at
+  all. A leading token is an objective only when it has no `.md`/`.html` suffix
+  and no `/`. Argument-less discovery never descends into `archive/`; an
+  explicitly passed path is honored as given, archived or not, and stops when it
+  does not resolve
+- **No-plan chain (command only)** — with no path, it asks
+  `Start with a proposal` / `Straight to plan authoring`, delegates to
+  `build-proposal` and `implementation-plan`, then re-resolves the produced spec
+  by path and implements it. `Exit — I'll implement later` and `Run as workflow`
+  at the chained Step 8 both terminate the chain without writing source
+- **Preconditions** — surfaces a dirty working tree before anything else, chain
+  included; then refuses to silently redo a `completed` plan and resumes from
+  the first unmarked step
+- **Three gates** — an **acceptance-criteria gate** (verify and check off each
+  criterion), an **end-to-end verification gate** (run the objective test and
+  walk the Verification section; on failure, fix and re-verify up to 3 times),
+  and a **completion-checklist gate** (steps, criteria, and status agree).
+  `status: completed` is written only after end-to-end verification passes
+- **Handoff** — stops without committing; the source changes, updated spec, and
+  re-rendered HTML are left in the working tree
 
 ### `build-proposal` Skill
 
 Command-invocable via `/plan-agent:build-proposal <idea>` and model-invocable on idea / "should-we" / compare-and-align intent. It is the **upstream** layer to `implementation-plan`: it decides *should-we + what* and hands off the *how*. Its three-part description shares no trigger phrase with `implementation-plan`, so the two never collide on the model-invocation path.
 
 - **Right-sizing triage** — Step 1 picks a **Tier**: Tier 0 (answer directly, no loop), Tier 1 (one research pass, short proposal), Tier 2 (full 8-step loop + canonical artifact). The tier escalates or de-escalates as research reveals scope.
-- **8-step loop** — Frame → Fan out research (parallel) → Synthesize the core finding → Separate facts from decisions → Resolve decisions (recommendation-first) → Author the artifact → Deepen on request → Converge & hand off. Step 0 self-bootstraps out of plan mode.
-- **Artifact-dir resolution** — `--dir` → `planAgent.proposalsDirectory` (settings precedence: project-local `.claude/settings.local.json` → project `.claude/settings.json` → global `~/.claude/settings.json`) → `${PWD}/docs/proposals/`; `mkdir -p`s the resolved dir and writes `<slug>.md`. A committed `docs/proposals/.gitkeep` seeds the default.
+- **8-step loop** — Frame → **Confirm the ask (Step 1b gate)** → Fan out research (parallel) → Synthesize the core finding → Separate facts from decisions → Resolve decisions (recommendation-first) → Author the artifact → Deepen on request → Converge & hand off. Step 0 self-bootstraps out of plan mode.
+- **Step 1b confirms the objective before any research runs** — the restated one-liner, domains, and tier go back to the human as an `AskUserQuestion` (**Looks right** / **Refine it**) at Tier 1 and 2; Tier 0 has already answered and skips it. Refining is bounded at two rounds, after which the human's latest wording is used verbatim. Step 1 also forbids *enriching* the restatement — adding a downstream purpose or success condition the human never stated is the specific drift the gate exists to catch, since the entire fan-out then researches the invention.
+- **Artifact resolution (dual-write, 6.0.0)** — the deliverable is a **saved prompt** at `<prompts-dir>/proposal-<slug>.md`, authored by delegating to `prompt`; the legacy `<proposals-dir>/<slug>.md` copy is still written for one deprecation release carrying a banner naming the prompt as authoritative, and is removed in 6.1.0. The prompts directory resolves `--dir` → `promptsDirectory` (settings precedence: project-local `.claude/settings.local.json` → project `.claude/settings.json` → global `~/.claude/settings.json`) → `${PWD}/docs/prompts/` — the same key `prompt` and `artifact-tools:prompt-artifact` read. **`--dir` follows the authoritative artifact, so since 6.0.0 it names the prompts directory, not the proposals one**; the deprecated proposals root still resolves from `planAgent.proposalsDirectory` → `${PWD}/docs/proposals/`, seeded by a committed `docs/proposals/.gitkeep`.
+- **The prompt filename carries no date** — `proposal-<slug>.md`. It is a living document that deepens over rounds, and a dated name would resolve to a different path the moment a loop crossed midnight, forking it in two. The slug is the identity; `created:` and `modified:` carry the dates, and round two rewrites the same file in place rather than minting a `-2` variant.
+- **The caller dictates the path** — Step 6 passes `--out <path>` (and `--answers-gathered`, so the human is not re-interviewed) to `prompt`. `Skill()` has no documented return value, and `prompt`'s own Phase 7 would resolve a different directory and a different intent slug, so an independently derived path would name a file that was never written.
 - **`deep-research` is optional** — the web-research phase can delegate to the `deep-research` skill when available, falling back to `WebSearch`/`WebFetch` + `Agent` (`Explore`) breadth otherwise. No hard dependency.
-- **References (one level deep)** — `references/artifact-shape.md` (canonical section order + skeleton), `references/operating-principles.md` (ten principles + capability map), and two trimmed worked exemplars (`example-design-md-spec-alignment.md`, `example-proposal-builder-skill.md`) stamped with source URL + commit SHA/date.
-- **Handoff** — at convergence it stops and points to `/plan-agent:implementation-plan author an execution plan from the proposal at docs/proposals/<slug>.md`. It leads with an objective rather than a bare `.md` token: a bare token triggers `implementation-plan`'s 1:1 conversion mode (which maps `Changes/Steps` → step cards), and a proposal has only `Workstreams`/`Roadmap` — so leading with the objective keeps the full planning pass that drafts real, actionable steps.
+- **References (one level deep)** — `references/artifact-shape.md` (canonical section order + skeleton), `references/operating-principles.md` (ten principles + capability map), `references/artifact-resolution.md` (the runnable directory resolver, read at Step 6), and two trimmed worked exemplars (`example-design-md-spec-alignment.md`, `example-proposal-builder-skill.md`) stamped with source URL + commit SHA/date.
+- **Always offers the artifact** — Step 8 asks once, every converged run, whether to publish the proposal as a shareable claude.ai artifact; on yes it loads the bundled `artifact-design` skill to calibrate the page, then publishes with the `Artifact` tool. The offer is **not** suppressed by a blanket "no more questions" or by `--answers-gathered` — those cover the proposal's decisions, and publishing is the one action a human cannot undo by editing a file. It never publishes without an explicit yes, and Tier 0 never reaches the offer because it writes no artifact at all.
+- **Handoff** — at convergence it sets the prompt's `status:` to `converged`, stops, and points to `/plan-agent:implementation-plan author an execution plan from the proposal prompt at <prompts-dir>/proposal-<slug>.md`. It leads with an objective rather than a bare `.md` token: a bare token triggers `implementation-plan`'s 1:1 conversion mode (which maps `Changes/Steps` → step cards), and a proposal has only `Workstreams`/`Roadmap` — so leading with the objective keeps the full planning pass that drafts real, actionable steps.
 
 Usage:
 
 ```text
 /plan-agent:build-proposal should we adopt DESIGN.md for our component tokens
 /plan-agent:build-proposal compare our state management to Zustand and align
-/plan-agent:build-proposal --dir docs/rfcs how would we add offline support
+/plan-agent:build-proposal --dir docs/rfcs how would we add offline support   # --dir names the prompts dir
 ```
 
 ### `finalize-plan` Skill
@@ -549,10 +667,19 @@ The scan always excludes `index.html` itself and the `docs/plans/archive/` subdi
 
 PostToolUse hook that fires on every `Write`/`Edit`/`MultiEdit` to a non-`index.html` `.html` file inside the configured plans directory. Calls `build-index.sh` (bundled at `hooks/build-index.sh`) to regenerate the gallery index automatically. Always exits 0 so index-rebuild failures never block plan writes.
 
-### Optional: `plan-interview` pairing
+### Merged from `plan-interview` (v4.0.0)
 
-The built-in Step 5b Interview runs a lightweight stress-test during plan creation. For deeper standalone reviews (multi-round interviews with product-plan routing, plan-name validation, and HTML artifact generation), install the `plan-interview` plugin:
+As of v4.0.0, `plan-agent` absorbs the former `plan-interview` plugin — there is no separate install. The stress-test surface is covered by the built-in **Step 5b Interview** during plan creation and the **`review-plan`** Agent Team for deeper reviews. The unique capabilities `plan-interview` carried are now first-class plan-agent skills and commands:
 
-```
-/plugin install plan-interview@agentics-kit
-```
+| Was | Now |
+|-----|-----|
+| `/plan-interview:documenting-plans` | `/plan-agent:documenting-plans` (+ `plan-documenter` batch agent) |
+| `/plan-interview:markdown-to-html` | `/plan-agent:markdown-to-html` |
+| `/plan-interview:plan-status` | `/plan-agent:plan-status` (`.md`/YAML plans; single file or `--all` bulk) |
+| `/plan-interview:update-plan-status` | `/plan-agent:plan-status <dir> --all` (folded into `plan-status`) |
+| `/plan-interview:plan-maintenance` | `/plan-agent:plan-maintenance` |
+| `/plan-interview:deep-grill` | `/plan-agent:deep-grill` |
+| ExitPlanMode stress-test nudge | `hooks.json` `ExitPlanMode` PostToolUse matcher |
+| `/plan-interview:plan-interview`, `plan-to-html`, `plan-hygiene`, `review-rename-plans` | dropped — covered by the built-in interview, `review-plan`, `markdown-to-html`, and the `validate-plan-filename` hook |
+
+If you previously had `plan-interview@agentics-kit` installed, uninstall it and ensure `plan-agent` is at v4.0.0 or later.

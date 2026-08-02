@@ -1,7 +1,7 @@
 ---
 name: ship
 description: "Ships changes by staging, committing, pushing, and opening a PR. Supports GitHub and GitLab in a single guided flow. Use when the user asks to ship changes or commit and create a PR."
-allowed-tools: Bash(git *), Bash(gh *), Bash(glab *), Read, Grep, Glob, ToolSearch, ExitPlanMode
+allowed-tools: Bash(git *), Bash(gh *), Bash(glab *), Read, Edit, Grep, Glob, ToolSearch, ExitPlanMode
 disable-model-invocation: true
 ---
 
@@ -15,7 +15,7 @@ For commit-only use commit-agent, for PR-only use pr-agent.
 
 ## Step 0: Exit Plan Mode
 
-**If currently in plan mode**, call `ExitPlanMode` first and silently before any other action — staging, committing, pushing, and creating a pull/merge request are mutations and cannot proceed inside plan mode. Skip this step entirely when not in plan mode. `ExitPlanMode` is a deferred tool — use `ToolSearch` with `select:ExitPlanMode` first, then call it silently.
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 ## Step 1: Pre-flight Guards
 
@@ -32,62 +32,21 @@ first." and **STOP**.
 "Cannot ship from the default branch. Switch to a feature branch first." and
 **STOP**.
 
-**Detect platform:** Run `git remote get-url origin`. Determine the platform
-from the URL:
-
-- Contains `github.com` → **GitHub** (use `gh` commands below)
-- Contains `gitlab.com` or `gitlab` → **GitLab** (use `glab` commands below)
-- If unclear, check which CLI is available: try `gh --version` then
-  `glab --version`. Use whichever is installed.
-- If neither can be determined, ask the user which platform they use and
-  **STOP**.
-
-**CLI not available or not authenticated:**
-
-For GitHub: run `gh auth status`. If `gh` is not installed or returns an auth
-error, output:
-
-```
-GitHub CLI is required. Install it from https://cli.github.com/ and run `gh auth login`.
-```
-
-and **STOP**.
-
-For GitLab: run `glab auth status`. If `glab` is not installed or returns an
-auth error, output:
-
-```
-GitLab CLI is required. Install it from https://gitlab.com/gitlab-org/cli and run `glab auth login`.
-```
-
-and **STOP**.
+**CLI not available or not authenticated:** Detect GitHub vs GitLab, then verify
+the CLI, per `references/platform-clis.md` (bundled with this skill). If the CLI
+is missing or unauthenticated, print that file's install-and-login message and
+**STOP**.
 
 ## Step 2: Stage Changes
 
 Run `git add -A` to stage all changes.
 
-This trusts `.gitignore` to exclude sensitive or generated files. The user is
-responsible for `.gitignore` correctness.
+This trusts `.gitignore` to exclude sensitive or generated files.
 
 ## Step 3: Analyze Diff and Write Commit Message
 
-Run `git diff --staged` to inspect all staged changes.
-
-Write a conventional commit message:
-
-```
-<type>(<scope>): <description>
-```
-
-**Rules:**
-
-- Total length: ≤ 72 characters
-- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `style`,
-  `ci`, `build`
-- Scope: the most-changed top-level directory (e.g., `plugins/git-agent` →
-  `plugins/git-agent`)
-- Omit scope entirely if changes span more than 2 top-level directories
-- Description: imperative mood, lowercase, no trailing period
+Run `git diff --staged`, then write a `<type>(<scope>): <description>` message —
+format rules in `references/commit-message.md`.
 
 ## Step 4: Commit
 
@@ -100,8 +59,21 @@ git commit -m "<message>"
 Output the commit hash and message on success.
 
 **If a pre-commit hook fails:** report the hook's output verbatim and **STOP**.
-Do not retry. Do not use `--no-verify`. Do not modify the staged files. Let the
-user fix the issue.
+Do not retry, do not use `--no-verify`, do not modify the staged files — let the
+user fix it.
+
+## Step 4.5: Self-Review Before Push
+
+Runs by default. Skip this step entirely if the user passed `--no-review`.
+
+Resolve `<base>` with the **Step 7: Detect Base Branch** procedure, then reuse
+it there rather than detecting twice. If none resolves, output "Skipping
+self-review: cannot resolve a base branch." and continue to Step 5.
+
+Read `references/self-review.md` (bundled with this skill) — the four regression
+checks, the reporting format, and the amend procedure.
+
+This step never blocks the ship. It fixes what it can and reports the rest.
 
 ## Step 5: Push
 
@@ -111,101 +83,28 @@ Run:
 git rev-parse --abbrev-ref --symbolic-full-name @{u}
 ```
 
-If the command exits non-zero (no upstream tracking ref), run:
-
-```
-git push -u origin <current-branch>
-```
-
-If the command exits zero (upstream exists), run:
-
-```
-git push
-```
+Non-zero exit (no upstream tracking ref) → `git push -u origin <current-branch>`.
+Zero exit → `git push`.
 
 ## Step 6: Check for Existing PR/MR
 
-For GitHub, run:
-
-```
-gh pr view --json url
-```
-
-For GitLab, run:
-
-```
-glab mr view --output json
-```
-
-If a PR/MR already exists, output: "Pushed to existing PR/MR: <url>" and
-**STOP**. The new commit is already on the remote.
+Read `references/pr-body.md` (bundled with this skill) — its Step 6 section. If a
+PR/MR exists, report its URL and **STOP**.
 
 ## Step 7: Detect Base Branch
 
-Run:
-
-```
-git symbolic-ref refs/remotes/origin/HEAD
-```
-
-Strip the `refs/remotes/origin/` prefix to get the base branch name. If this
-command fails, fall back to `main`, then `master` (try
-`git rev-parse --verify main` to confirm existence before falling back).
+Same reference, its Step 7 section — resolve `<base>` from `origin/HEAD`.
 
 ## Step 7.5: Scan for Issue References
 
-Look for plan files on this branch that link to GitHub or GitLab issues.
-
-Run:
-```
-git diff --name-only <base>...HEAD -- 'docs/plans/*.html' 'docs/plans/**/*.html'
-```
-
-For each file listed, use `Grep` to search for the pattern `<meta name="plan-issue" content="` and extract the URL value. Collect all unique URLs found.
-
-If any URLs are found, include a `## Linked Issues` section in the PR/MR body (Step 8) with one `Closes <url>` line per unique URL. If no plan files are found or none contain issue references, skip this section entirely.
+Same reference, its Step 7.5 section — collect plan-file issue URLs for the
+body's `## Linked Issues`.
 
 ## Step 8: Create Pull/Merge Request
 
-Gather content:
-
-```
-git log <base>..HEAD --oneline
-git diff <base>...HEAD --stat
-```
-
-**Title:** short summary of the branch's changes (≤ 70 characters), imperative
-mood.
-
-**Body:** use this structure:
-
-```
-## Summary
-- <bullet 1>
-- <bullet 2>
-
-## Changes
-<brief description of what changed and why>
-
-## Linked Issues
-Closes <url>
-```
-
-Omit the `## Linked Issues` section entirely if Step 7.5 found no issue references.
-
-For GitHub, run:
-
-```
-gh pr create --title "<title>" --body "<body>"
-```
-
-For GitLab, run:
-
-```
-glab mr create --title "<title>" --description "<body>"
-```
-
-Output the PR/MR URL and **STOP**.
+Same reference, its Step 8 section — title rules, body template, and the
+`gh`/`glab` create commands. **Never mark a Test Plan box that was not
+verified.** Output the URL and **STOP**.
 
 ---
 

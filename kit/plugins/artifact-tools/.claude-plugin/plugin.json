@@ -1,0 +1,20 @@
+{
+  "name": "artifact-tools",
+  "description": "Publish diffs, sessions, plans, and prompts as live claude.ai artifact pages — an annotated diff walkthrough, a reviewer-first session recap, plan HTML, and saved prompts published singly or as a filterable library — with a blocking secret-scrub gate, a local-HTML fallback, and stable URLs across sessions",
+  "author": {
+    "name": "Agentics Project"
+  },
+  "license": "MIT",
+  "keywords": [
+    "artifacts",
+    "publishing",
+    "diff-review",
+    "session-recap",
+    "plan-publishing",
+    "prompt-publishing",
+    "sharing",
+    "claude-ai"
+  ],
+  "homepage": "https://github.com/shawn-sandy/agentics-kit/tree/main/kit/plugins/artifact-tools",
+  "repository": "https://github.com/shawn-sandy/agentics-kit"
+}

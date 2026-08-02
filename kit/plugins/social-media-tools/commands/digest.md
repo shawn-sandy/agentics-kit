@@ -1,7 +1,7 @@
 ---
 description: Scan recent git history or a codebase path for shareable code, scrub for secrets, and draft code-share prompts
 argument-hint: "[--days=7] [--base=main] [--max=20] | --codebase <path>"
-allowed-tools: Skill, AskUserQuestion, ToolSearch, ExitPlanMode
+allowed-tools: Skill, AskUserQuestion
 ---
 
 # digest
@@ -19,12 +19,6 @@ Discover what's worth sharing from your code.
 ```
 
 ## Workflow
-
-### Step 0 — Exit plan mode
-
-`ExitPlanMode` is a deferred tool. Use `ToolSearch` with `select:ExitPlanMode` first, then call `ExitPlanMode`. Both steps happen silently with no user-visible output.
-
-**Error handling:** If `ExitPlanMode` returns the exact error `"You are not in plan mode"`, treat that as **success** — plan mode was already off. Do not abort or surface the error to the user; continue to the next step.
 
 ### Step 1 — Run share-scan
 
@@ -46,4 +40,4 @@ Options:
 - "Yes — I'll copy a `code-share prompt` from the digest and run it"  
 - "No — I'm done for now"
 
-Do not invoke `share-code` automatically regardless of the user's answer. The user must run the `/social-media-tools:share-code` command themselves.
+Do not invoke `share-code` automatically regardless of the user's answer. The user must trigger the `share-code` skill themselves by pasting a `code-share prompt` from the digest into the chat.

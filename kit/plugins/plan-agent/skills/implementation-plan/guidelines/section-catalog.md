@@ -59,6 +59,10 @@ as `checked` attribute edits in the HTML.
 Prose (one or more paragraphs) describing the end-to-end confirmation that
 the whole change achieved the objective. Rendered under "Final check".
 
+Must name at least one check someone else could re-run: a command with its
+expected result, or a specific observable end state (file contents, rendered
+output, HTTP response). "Confirm it works" is not a verification.
+
 ## Optional sections (include when they earn their place)
 
 ### `## Context`
@@ -105,13 +109,21 @@ Tier 1 — This plan changes application code
 Tier rules: **Tier 1** when any step creates, modifies, or deletes
 application source files — include the objective test plus whichever of
 unit/integration/E2E apply (never empty stubs). **Tier 2** when steps only
-touch docs, plans, or non-runtime metadata — the objective test alone. Keep
+touch docs, plans, or non-runtime metadata — the objective test alone, whose
+**Run** is a plain shell command that exits non-zero when the objective is
+not met (`grep -q '<expected text>' <file>`, `test -f <path>`, a script) —
+there is no test runner, but there is still a command. Every objective test
+carries a **Run** command, both tiers; a plan with no runnable completion
+check is not finished being planned. Keep
 the tier line's `Tier 1 — ` / `Tier 2 — ` prefix; tooling matches on it.
 Judge the tier by what the steps actually do, not the `type:` frontmatter.
 
 ### `## Next Steps` *(optional)*
 
 Follow-up work that builds on the plan but is not required to finish it.
+`## Out of Scope` is accepted as the same section, and the match is
+case-insensitive — but any other heading is discarded silently, so use one of
+these two.
 Renders as collapsible cards, each with a Copy-prompt button — the same
 markup legacy hand-written plans carried. Each top-level `- ` bullet is one
 card: the bullet's first line is the summary, an indented fenced code block
@@ -119,7 +131,15 @@ is the self-contained paste-ready prompt, and any other indented lines are
 description prose. Bullet-less content (or lines before the first bullet)
 renders as plain paragraphs. Label blue-sky items as wish list. Prompts must
 be self-contained — name the repo, files, version bump, and CHANGELOG so the
-follow-up can run in a fresh session.
+follow-up can run in a fresh session. Each prompt ends with its own
+verification instruction: the command to run or state to confirm before
+reporting done. These prompts run in a fresh session with no plan behind
+them, so the check has to travel inside the prompt.
+
+When a prompt contains its own fenced block, the outer fence must be longer
+than any fence inside it — ` ````text ` around a prompt quoting ` ```yaml `.
+Same-length fences make the prompt end at the inner fence, which is how
+Markdown works everywhere, not a quirk of this parser.
 
 ```markdown
 ## Next Steps
@@ -162,16 +182,27 @@ created: 2026-07-12     # YYYY-MM-DD; preserved across re-renders when set
 repo: my-repo           # default: origin remote basename, else cwd basename
 effort: high            # low | medium | high; omit to auto-derive from step/file counts
 glance: <one line>      # 2–3 plain-language sentences, on ONE line — the At-a-glance block
-workflow: true          # force (true) or suppress (false) the workflow prompt; omit for the heuristic
+workflow: auto          # auto (heuristic) | always | never; omit for auto
 ---
 ```
 
 Every value is a single `key: value` line — the frontmatter parser does not
-support multi-line values. `glance` must not restate the objective: the
+support multi-line values. The enumerated keys above (`status`, `type`,
+`effort`, `workflow`) accept only the listed values: an unrecognized one
+fails the render naming the key and the valid set, rather than silently
+falling back — `status: complete` used to render as `todo` and
+`workflow: yes` used to mean "no workflow". `workflow: true`/`false` stay
+accepted as the pre-7.0 spelling of `always`/`never`. `issue` is the tracking
+ticket's full URL — the renderer emits it as the `plan-issue` meta tag and a
+header link, so a completed plan still points at the ticket to close. It must
+be `http(s)`; any other scheme is dropped with a warning rather than rendered,
+since escaping leaves a `javascript:` value clickable. Any tracker may be
+linked, but only `github.com` and GitLab URLs can be *closed* on completion —
+those are the two the `gh`/`glab` CLIs can drive; a Jira or Linear link
+renders and is then left alone. `glance` must not restate the objective: the
 objective is the *what*; the glance is *why it matters* and *how we'll know
 it worked*, written for someone who wasn't in the planning session. Unknown
-keys (e.g. `priority`, `issue`) are preserved in the spec but not rendered
-today.
+keys (e.g. `priority`) are preserved in the spec but not rendered today.
 
 ## Markdown-only sections (kept in the spec, skipped by the renderer)
 

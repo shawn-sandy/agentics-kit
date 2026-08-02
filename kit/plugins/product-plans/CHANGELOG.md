@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.4.13 — 2026-07-28 — Collapse the plan-mode guard to one line
+
+- `plan-review-agents` replaces its `ExitPlanMode` preamble with the canonical
+  one-line guard.
+- `plan-review-agents` guard moved to the first Step 0 action — it previously ran
+  background-flag detection first. Pre-existing; found in review of this change.
+- `product-plans-bg` drops the guard entirely — it only dispatches
+  `agent-product-plans`, which reaches `plan-review-agents` and its guard.
+  `ToolSearch` and `ExitPlanMode` are removed from its `allowed-tools`.
+
+## v3.4.12 — 2026-07-29 — Document the reviewers' codebase-only research constraint
+
+### Changed
+
+- **README now states that panel research is codebase-only** — no `WebFetch`, no `WebSearch`. The reviewers' tool list was already documented, but the constraint that follows from it lived only in the repo's root `CLAUDE.md`, which is being trimmed back to one line per plugin. Documentation only; no behavior change.
+
+## v3.4.11 — 2026-07-17 — Repoint plan-interview cross-references to plan-agent
+
+### Changed
+
+- `plan-interview` merged into `plan-agent` 4.0.0. Repointed the README comparison table, the `plan-review-agents` SKILL handoffs, and the interview-artifact attribution from `plan-interview`/`plan-interview:deep-grill` to `plan-agent`/`plan-agent:deep-grill`. Description no longer names the removed plugin. No behavior change.
+
 ## v3.4.10 — 2026-06-20 — Standardize plans-directory resolution (Claude settings precedence)
 
 ### Fixed

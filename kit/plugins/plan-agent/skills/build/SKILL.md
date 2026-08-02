@@ -1,0 +1,95 @@
+---
+name: build
+description: "Implements a plan file that already exists. Walks its steps, ticks the spec, re-renders, and runs the completion gates. Use when asked to implement an existing plan."
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill, ToolSearch, ExitPlanMode
+argument-hint: "[<plan.md|plan.html>] [<objective>] [--dir <path>]"
+model: opus
+---
+
+# Plan Agent — Build
+
+## Overview
+
+**The markdown spec is the source of truth.** Every progress mark is a spec
+edit followed by a re-render: `[x]` step markers, `- [x]` criteria, `status:`,
+`## Completion Report`. Never `checked` attributes in the HTML, never a JS
+toggle, never browser-only persistence — a user ticking a box in the preview
+browser changes only their local DOM, and the next re-render discards it.
+Unchecking is the same rule in reverse: flip the bullet back to `- [ ]` in the
+spec.
+
+## References
+
+- `references/invocation.md` — activation, flags, argument grammar
+- `references/resolve-plan.md` — Steps 0-1
+- `references/author-plan-chain.md` — Step 1b
+- `references/completion-gates.md` — Steps 3-5
+
+## Invocation & Arguments
+
+Read `references/invocation.md` before parsing `$ARGUMENTS`.
+
+## Step 0 — Exit plan mode
+
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
+
+Per `references/resolve-plan.md`.
+
+## Re-render (subroutine — referenced by every step below)
+
+```bash
+RENDERER="${CLAUDE_PLUGIN_ROOT}/scripts/build-plan-html.mjs"
+[ -f "$RENDERER" ] || RENDERER="scripts/build-plan-html.mjs"
+node "$RENDERER" "<stem>.md" -o "<stem>.html"
+```
+
+`<stem>` is the resolved plan's path without its extension, fixed in Step 1
+(the subroutine is defined here but never runs before Step 1 resolves it).
+Run this after **every** batch of spec edits — status changes included — and
+always as the final action. A non-zero exit that names a missing or malformed
+section means the spec edit broke the format: fix the markdown and re-run,
+never hand-edit the HTML to compensate. Any other failure — `MODULE_NOT_FOUND`,
+a missing renderer, a node crash — is an environment problem, not a spec
+problem: report it and stop rather than rewriting a valid spec. The plugin's
+`render-plan-html.py` hook also re-renders on each spec write; run the command
+explicitly anyway so a parse failure surfaces here instead of silently.
+
+## Step 1 — Resolve the plan
+
+Read `references/resolve-plan.md` now and follow its Step 1. A missing path stops:
+never implement a different plan, and do not enter Step 1b.
+**Never resolve a gate by picking for the user.**
+Already `status: completed` → ask; do not silently redo finished work.
+
+## Step 1b — Author a plan first (the no-plan chain)
+
+Reached only from Step 1's no-path branch. Read
+`references/author-plan-chain.md` and follow it. An abandoned chain leaves both
+artifacts uncommitted: **Never clean either one up.**
+
+## Step 2 — Implement
+
+Set the spec's `status:` to `in-progress` and re-render, then work through each
+step sequentially — apply the changes, verify each step, and mark progress in
+the spec as you go (insert the `[x]` marker after the finished step's number;
+the re-render flips the card and chip).
+
+## Step 3 — Acceptance criteria gate (mandatory)
+
+Read `references/completion-gates.md` now and run its Step 3.
+
+## Step 4 — End-to-end verification gate (mandatory)
+
+Per `references/completion-gates.md` Step 4.
+
+## Step 5 — Completion checklist gate (mandatory)
+
+Per `references/completion-gates.md` Step 5. Fix the **spec**, never the HTML —
+and never by promoting `status:` to satisfy the check.
+
+## Step 6 — Report and hand off
+
+State what was implemented, what verification ran, and the final status. Then
+stop: leave the source changes, the updated spec, and the re-rendered HTML in
+the working tree. Commit only if the user asks — and confirm the branch is not
+a protected one (`main`/`master`) before doing so.

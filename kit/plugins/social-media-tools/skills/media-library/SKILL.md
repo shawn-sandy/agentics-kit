@@ -16,9 +16,7 @@ Every card-generating skill saves populated HTML to `docs/media/social/`. This s
 
 ## Exit plan mode
 
-`ExitPlanMode` is a deferred tool. **Only call it if currently in plan mode** — skip this step entirely when not in plan mode. When calling: use `ToolSearch` with `select:ExitPlanMode` first, then call `ExitPlanMode` silently.
-
----
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 ## Step 1 — Scan for saved posts
 
@@ -97,12 +95,52 @@ If no directory is found: output "Templates not found. Install the plugin or loa
    - `{{GALLERY_ENTRIES}}` → the concatenated `<a>` blocks
    - `{{CARD_COUNT}}` → total number of cards
    - `{{GENERATED_AT}}` → current date and time (e.g., `2026-05-27 14:30`)
+   - `{{HREF_HOME}}`, `{{HREF_PLANS}}`, `{{HREF_PROTOTYPES}}`, `{{HREF_ARTIFACTS}}`, `{{HREF_SOCIAL}}` → each tab's target index, relative to `docs/media/social/` (this gallery's own output directory): `../../index.html`, `../../plans/index.html`, `../../prototypes/index.html`, `../../artifacts/index.html`, and `index.html`. If the project sets `plansDirectory` to something other than `docs/plans`, point the Plans tab at that directory's `index.html` instead — the other three collections are fixed
+   - `{{COUNT_PLANS}}`, `{{COUNT_PROTOTYPES}}`, `{{COUNT_ARTIFACTS}}`, `{{COUNT_SOCIAL}}` → the number of `*.html` files other than `index.html` in the plans directory (the resolved `plansDirectory`, default `docs/plans`), `docs/prototypes`, `docs/artifacts`, and `docs/media/social`. Count them on disk rather than reading the sibling `index.html` files — the four galleries are generated independently and any of them may be stale. A missing directory counts 0
+   - `{{CUR_SOCIAL}}` → `aria-current="page"`; `{{CUR_HOME}}`, `{{CUR_PLANS}}`, `{{CUR_PROTOTYPES}}`, `{{CUR_ARTIFACTS}}` → the empty string. Exactly one tab is marked current
+
+   The href, count, and current-tab groups feed the topbar this gallery shares with the plan-agent galleries. Leaving a `{{...}}` placeholder unsubstituted renders it as literal text in the nav.
 
 4. **Write** the populated HTML to `docs/media/social/index.html`.
 
 ---
 
-## Step 4 — Open in browser
+## Step 4 — Verify the index
+
+Confirm the written index is complete and renders one card per file that Step 2 actually parsed.
+
+Set `SOURCE_COUNT` to the number of cards Step 2 emitted — **not** the raw line count of `$MEDIA_FILES` — so a file that was deliberately skipped is not reported as a missing card.
+
+```bash
+SOURCE_COUNT=<number of cards emitted in Step 2>
+python3 - "$MEDIA_DIR/index.html" "$SOURCE_COUNT" <<'EOF'
+import sys
+from html.parser import HTMLParser
+
+path, expected = sys.argv[1], int(sys.argv[2])
+html = open(path, encoding='utf-8').read()
+
+class Counter(HTMLParser):
+    cards = 0
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a' and 'gallery-card' in dict(attrs).get('class', '').split():
+            self.cards += 1
+
+c = Counter()
+c.feed(html)
+if not html.rstrip().endswith('</html>'):
+    sys.exit(f"TRUNCATED: {path} does not end with </html>")
+print(f"OK: {c.cards} cards from {expected} files" if c.cards == expected
+      else f"MISMATCH: index has {c.cards} cards but {expected} files were parsed")
+sys.exit(0 if c.cards == expected else 1)
+EOF
+```
+
+If the command exits non-zero, report the failure to the user — naming the index path, the card count, and the parsed count — and **STOP** instead of opening the gallery.
+
+---
+
+## Step 5 — Open in browser
 
 ```bash
 GALLERY_PATH=$(realpath "docs/media/social/index.html" 2>/dev/null || echo "${PWD}/docs/media/social/index.html")
@@ -113,7 +151,7 @@ Tell the user: "Media library generated at `docs/media/social/index.html` with {
 
 ---
 
-## Step 5 — Optional follow-up
+## Step 6 — Optional follow-up
 
 If the user asks to view copy text from a specific card after seeing the library:
 
@@ -138,6 +176,6 @@ If the user asks to view copy text from a specific card after seeing the library
 
 ---
 
-## Step 6 — Stop
+## Step 7 — Stop
 
 **STOP.** Do not invoke any other skills or run git commands after delivering.

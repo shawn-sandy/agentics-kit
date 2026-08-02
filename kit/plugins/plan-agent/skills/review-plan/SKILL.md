@@ -11,7 +11,7 @@ allowed-tools: Read, Glob, Grep, Bash, Edit, AskUserQuestion, TodoWrite, ToolSea
 
 ## When not to use
 
-- **Not a code reviewer.** For code, use `code-review`. For conversational plan stress-testing, use `plan-interview`.
+- **Not a code reviewer.** For code, use `code-review`. For conversational plan stress-testing, use the built-in Step 5b interview.
 - **Requires Agent Teams.** Hard-stops if the feature flag is unset or Claude Code is below v2.1.32.
 
 ## Background mode
@@ -30,7 +30,7 @@ Detection: check whether `$ARGUMENTS` (or the `args` string passed via `Skill()`
 
 ### Step 0 — Exit plan mode and create progress todos
 
-`ExitPlanMode` is a deferred tool. **Only call it if currently in plan mode** — skip this step entirely when not in plan mode. When calling: use `ToolSearch` with `select:ExitPlanMode` first, then call `ExitPlanMode` silently.
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 Use `TodoWrite` to create todos for Steps 1–8. Mark each `completed` as done.
 

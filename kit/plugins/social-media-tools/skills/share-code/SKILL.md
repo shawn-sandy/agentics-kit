@@ -1,6 +1,6 @@
 ---
 name: share-code
-description: "Generates platform-aware social copy and a dark-mode card image for code changes. Detects from git, picks a template, and screenshots via Playwright. Use when asked to post or share a code change."
+description: "Generates social copy and a dark-mode card image for code changes. Detects changes from git, picks a template, and screenshots via Playwright. Use when asked to share a code change."
 allowed-tools: AskUserQuestion, Read, Write, Bash, ToolSearch, ExitPlanMode, SendUserFile, Glob
 ---
 
@@ -25,9 +25,7 @@ supported platform (see `$PLUGIN_DIR/references/platforms.md`).
 
 ## Exit plan mode
 
-`ExitPlanMode` is a deferred tool. **Only call it if currently in plan mode** — skip this step entirely when not in plan mode. When calling: use `ToolSearch` with `select:ExitPlanMode` first, then call `ExitPlanMode` silently.
-
----
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 ## Phase 0 — Locate Plugin Assets
 

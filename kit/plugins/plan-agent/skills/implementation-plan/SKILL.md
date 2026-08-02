@@ -27,10 +27,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/build-plan-html.mjs" <plan>.md -o <plan>.htm
 
 Exit 0 = rendered; exit 1 prints exactly which required section is missing
 or malformed — fix the spec and re-run. A `PostToolUse` hook
-(`hooks/render-plan-html.py`) also re-renders the sibling HTML whenever a
-spec in the plans directory is written, so later markdown edits keep the
-pair fresh; still run the script explicitly after authoring so parse errors
-surface deterministically. Both files — the `.md` source of truth and the
+(`hooks/render-plan-html.py`) re-renders the sibling HTML whenever a spec in
+the plans directory is written, but do not rely on it: plugin `hooks.json`
+files are not registered in every runtime (notably the Claude Code desktop
+app, where they never fire), so a markdown edit can silently leave the pair
+stale. Always run the script explicitly after editing a spec — that also
+surfaces parse errors deterministically. Both files — the `.md` source of truth and the
 rendered `.html` — are committed together in the plans directory.
 
 **Guidelines library** (in `guidelines/` beside this file — read the full
@@ -86,7 +88,7 @@ Parse `$ARGUMENTS` (or the derived text) in this order:
 
 Flags: `--quick` (= `--no-clarify --no-align --no-interview`),
 `--no-clarify`, `--no-align`, `--no-interview`, `--workflow` (always
-generate the workflow prompt: set `workflow: true` in the spec
+generate the workflow prompt: set `workflow: always` in the spec
 frontmatter), `--type <kind>`, `--template <name>` (`default` only;
 variants ship later as renderer style shells), `--dir <path>`,
 `--priority <level>` (written as a `priority:` frontmatter key; preserved
@@ -126,37 +128,72 @@ Echo the resolved objective and effective flags after Step 0.
   not advice. If the objective sounds like "fix X", write a plan for *how*
   to fix X.
 - The plan is the deliverable. Implementation is a separate, user-initiated
-  step (Step 8 lifts this constraint only when the user chooses it).
+  step: Step 8's `Implement now` hands off to the `build` skill, which owns
+  every source-file write. This constraint is never lifted here.
 
 ## What the renderer derives (never author these)
 
 `build-plan-html.mjs` computes everything derivable from the spec:
 
+- **Verification gate (shared by all three prompts)** — every generated
+  prompt ends with the same tail: verify against the plan's Tests,
+  Verification, and Acceptance Criteria; if everything passed, mark
+  completion in the spec (`[x]` step markers, `- [x]` criteria,
+  `status: completed`) and re-render; a failed check leaves
+  `status: in-progress` and names it. A prompt that says "implement this"
+  without the gate lets an agent report done on a plan still marked `todo` —
+  never emit one.
+
+  The *check* clause is compressed — naming the three spec sections beats
+  spelling out how to walk each one. The *record* clause is not, and must not
+  be. 7.0.0 trimmed both and had to restore the second: an unfinished spec
+  carries bare numbered steps and bullets, so there is no `[x]` for the agent
+  to copy, and the rendered progress bar and step chips read from exactly
+  those markers. The re-render stays too — `hooks.json` registers
+  `render-plan-html.py` on PostToolUse writes, but that registration is not
+  honoured everywhere: the Claude Code desktop app never wires up plugin
+  `hooks.json` at all, so a spec edited there leaves the sibling HTML stale.
+  The instruction is not redundant in practice. Only `copyCmd()` rebuilds a
+  richer prompt from live DOM; `copyGoal()` and `copyWorkflow()` copy this
+  tail verbatim, so anything dropped here is dropped on two of three paths.
 - **Implement prompt** —
-  `Read and implement all steps in the plan at <filepath> — <objective>`,
-  rendered as the single visible call-to-action
+  `Read and implement all steps in the plan at <filepath> — <objective>.`
+  plus the verification gate, rendered as the single visible call-to-action
   row and the `plan-implement` meta tag. `<filepath>` is the **markdown
   spec's** relative path, not the HTML's — an implementing agent reads the
   ~5–10 KB spec instead of the 60–120 KB rendered page, and updates
   progress where it lives. Its Copy button copies a fuller action-oriented
   prompt built from live DOM state that walks the agent through the
   markdown-first loop: tick `[x]` step markers and `- [x]` criteria in the
-  spec, set `status: completed`, then re-render the sibling HTML so it shows
+  spec, run the plan's Verification and Tests end-to-end to confirm the
+  objective actually works, set `status: completed`, then re-render the sibling HTML so it shows
   every step and criterion complete — never hand-edit the HTML.
 - **Goal prompt** — always present: `Achieve this goal: <objective>. The
   plan at <filepath> describes one approach — use it as reference, but
-  optimize for the outcome` (same spec `<filepath>`). Emitted as the
+  optimize for the outcome.` plus the verification gate (same spec
+  `<filepath>`). Emitted as the
   `plan-goal` meta tag and the "Pursue as goal" drawer row with its
-  `copyGoal(this)` copy button.
+  `copyGoal(this)` copy button. When the workflow prompt below is emitted,
+  the sentence `Fan out across parallel subagents where that serves the
+  outcome.` is appended after the latitude clause and the row label gains
+  `, in parallel` — the two share one gate, so a plan too small for a
+  workflow row never licenses fan-out the page does not offer. The lead-in
+  stays `Achieve this goal:` in both cases: fan-out is stated as a license
+  the outcome grants, never as a leading directive, so the prompt does not
+  fix a decomposition before the agent may judge the plan's own to be wrong.
 - **Workflow prompt** — `Run a workflow to implement the plan at <filepath>
-  — <objective>. Brief subagents with the plan file at <filepath>` (same
+  — <objective>. Brief subagents with the plan file at <filepath>. Reserve a
+  final verification phase for the lead agent, not a subagent.` plus the
+  verification gate (same
   spec `<filepath>` — every subagent briefed with the compact spec). Emitted
   (row + `plan-workflow` meta tag) only when frontmatter says
-  `workflow: true` or the heuristic fires (5+ files across 3+ top-level
-  directories). `workflow: false` suppresses it. For the other workflow
-  triggers — repetitive per-file changes, independent parallel steps,
-  cross-checking review — set `workflow: true` yourself (see
-  `right-sizing.md`).
+  `workflow: always`, or when `workflow: auto` (the default when the key is
+  absent) fires the heuristic — 4+ files across 2+ top-level directories.
+  `workflow: never` suppresses it. For the other workflow triggers —
+  repetitive per-file changes, independent parallel steps, cross-checking
+  review — set `workflow: always` yourself (see `right-sizing.md`).
+  `true`/`false` remain accepted as the pre-7.0 spelling of
+  `always`/`never`; any other value is a spec error, not a fallback.
 - **Next Steps cards** — an optional `## Next Steps` spec section renders as
   collapsible follow-up cards with Copy-prompt buttons (bullet = card;
   fenced block in the bullet = paste-ready prompt). See
@@ -176,18 +213,12 @@ Echo the resolved objective and effective flags after Step 0.
   (`save-pdf-btn`, prints via the browser dialog), copy buttons, meta tags
   (`plan-status`, `plan-effort`, `plan-type`, `plan-created`, `plan-repo`,
   `plan-file`, `plan-path`, `plan-md`, `plan-implement`, `plan-goal`,
-  conditional `plan-workflow`), and HTML escaping.
+  conditional `plan-workflow` and `plan-issue`), and HTML escaping.
 
 ## Workflow
 
-Follow these steps exactly.
-
-0. **Self-bootstrap** — **If currently in plan mode**, call `ExitPlanMode`
-   first and silently before any other action — writing plan files is a
-   filesystem mutation that cannot proceed inside harness plan mode.
-   `ExitPlanMode` is a deferred tool: use `ToolSearch` with
-   `select:ExitPlanMode` first, then call it silently. Skip entirely when
-   not in plan mode.
+0. **Self-bootstrap** —
+   **If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 0.5. **Issue Ingestion** *(skip when no issue reference was detected)* —
    Fetch via `gh issue view <n> --repo <owner>/<repo> --json
@@ -269,10 +300,20 @@ EOF
    `origin` remote basename and falls back to the cwd basename. See the
    catalog's frontmatter table for the full key list.
 
-4. **Rename** — **Always** ensure the filename follows the `verb-target`
-   kebab-case convention before rendering. Rename when (a) the initial name
-   is auto-generated, placeholder, or non-descriptive, or (b) the plan's
-   purpose shifted after creation. A stale filename is a plan defect — do
+   The enumerated keys accept exactly these values — anything else fails the
+   render with a message naming the key and the valid set, rather than
+   quietly rendering something you did not write:
+
+   | key | values | default when absent |
+   |---|---|---|
+   | `status` | `todo`, `in-progress`, `completed` | `todo` |
+   | `type` | `feature`, `fix`, `refactor`, `docs`, `chore` | `feature` |
+   | `effort` | `low`, `medium`, `high` | derived from step and file counts |
+   | `workflow` | `auto`, `always`, `never` (`true`/`false` accepted as the pre-7.0 spelling of `always`/`never`) | `auto` |
+
+4. **Rename** — re-check the filename before rendering. Rename when (a) the
+   initial name is auto-generated, placeholder, or non-descriptive, or (b) the
+   plan's purpose shifted after creation. A stale filename is a plan defect — do
    not deliver until the name matches the content. Enforced by the
    `validate-plan-filename` `PostToolUse` hook
    (`${CLAUDE_PLUGIN_ROOT}/hooks/validate-plan-filename.py`).
@@ -342,8 +383,8 @@ EOF
    `## Acceptance Criteria` (author new criteria as `- [ ]` or plain `- `
    — both render unchecked). Every state change is a one-line Markdown
    edit followed by a re-render (the `render-plan-html.py` hook does this
-   automatically on each spec write; run the Step 5d command when you need
-   the failure surfaced). Re-rendering is lossless — progress re-renders
+   on each spec write *where plugin hooks are registered* — they are not in
+   the desktop app, so run the Step 5d command rather than assuming it fired). Re-rendering is lossless — progress re-renders
    from the spec, so there is no state to re-apply. Never edit `checked`
    attributes, `.step-card` classes, or status attributes in the HTML;
    `/plan-agent:finalize-plan` follows the same rule. A user ticking a box
@@ -374,8 +415,8 @@ EOF
 8. **Implement, Edit, or Exit** — After Step 7 completes, always ask the
    user what to do next.
 
-   Use `AskUserQuestion` with **two questions batched in one call**: the
-   next-step question below, and a tracking-issue question:
+   Use `AskUserQuestion` with **two questions batched in one call**, the
+   tracking-issue question **first** and the next-step question second:
    - Question: "Create a tracking issue for this plan on GitHub/GitLab?"
    - Options:
      - `Yes — create an issue` — Run the `git-agent:create-issue` skill with this plan.
@@ -389,7 +430,7 @@ EOF
    issue URL in one line instead.
 
    For the next-step question, **when a workflow prompt was generated**
-   (frontmatter `workflow: true` or the renderer's heuristic fired — check
+   (frontmatter `workflow: always` or the renderer's heuristic fired — check
    for the `plan-workflow` meta tag in the rendered HTML), include the
    workflow option:
    - Question: "The plan is complete. What would you like to do next?"
@@ -410,74 +451,25 @@ EOF
    the markdown spec's repo-relative path. That skill handles host
    detection, drafting, and its own confirmation gate; when it finishes,
    record the created issue URL as an `issue:` frontmatter key in the spec
-   and re-render. If the `git-agent` plugin is not installed (the Skill
+   and re-render — the renderer turns that key into the `plan-issue` meta tag
+   and the header link, so the plan carries its ticket for tracking and for
+   whoever closes it. If the `git-agent` plugin is not installed (the Skill
    call fails to resolve), say so in one line and continue with the
    next-step choice — never block on it.
 
-   **If the user chooses `Implement now`:** Lift the Scope Constraint for
-   this session only. Set the spec's `status:` to `in-progress`, then work
-   through each step sequentially — apply the changes, verify each step,
-   and mark progress in the spec as you go (insert the `[x]` marker after
-   each finished step's number; the re-render flips the card and chip).
+   **If the user chooses `Implement now`:** Invoke
+   `Skill(skill: "plan-agent:build", args: "<spec path>")` with the markdown
+   spec's relative path. That skill owns the implementation loop and its
+   three gates — acceptance criteria, end-to-end verification, completion
+   checklist — and marks progress in the spec. Do not duplicate its steps
+   here, and do not implement any part of the plan in this skill: the Scope
+   Constraint above stays in force, because the writing now happens in
+   `build`.
 
-   **Acceptance criteria gate (mandatory — after all steps, before marking
-   `completed`):**
-   1. Read each criterion from the spec's `## Acceptance Criteria` bullets.
-   2. Verify each one — run the relevant command or inspect the changed
-      files.
-   3. Check a criterion off by flipping its bullet to `- [x]` only after
-      confirming it; flip back to `- [ ]` to undo. Markdown edits in the
-      spec — never `checked` attributes in the HTML, a JS toggle, or
-      browser-only persistence.
-   4. If any criterion cannot be verified, list the unverified items via
-      `AskUserQuestion` ("Mark them as done anyway?" — `Yes, check them
-      off` / `No, leave unchecked`).
-   5. Only set `status: completed` after every criterion is checked;
-      otherwise set `in-progress` and note what remains open. The
-      re-render stamps the status into all three HTML representations.
-
-   **End-to-end verification gate (mandatory — after the criteria gate):**
-   confirms the *objective* works end-to-end, not just that criteria are
-   met.
-   1. Read the plan's Verification section and Tests section.
-   2. Run the objective-verification test via its authored **Run** command;
-      run the other test entries via the project's test runner against
-      their **File** paths (they carry no per-card run command). No
-      detectable runner → run only the objective test and say so. Tier 2
-      with nothing runnable → walk the Verification section and confirm end
-      state by inspection.
-   3. Confirm the objective test passes and every verification step holds.
-   4. **On failure — fix and re-verify (bounded loop):** diagnose, fix the
-      source files, re-run from sub-step 2, up to 3 times. Still failing →
-      STOP and ask via `AskUserQuestion` ("End-to-end verification is still
-      failing after 3 fix attempts: <summary>. How do you want to
-      proceed?") with `Keep trying` / `Mark in-progress and stop` / `Mark
-      completed anyway`. Set status only per the chosen option; for either
-      "Mark" option add a Completion Report entry naming the failing check
-      and reason.
-   5. Proceed only once verification holds — or the user explicitly chose
-      to proceed anyway. Report the outcome briefly.
-
-   **Completion checklist gate (mandatory — before committing):**
-   1. Verify in the spec: (a) every step carries its `[x]` marker, (b)
-      every acceptance criterion is `- [x]`, (c) the frontmatter says
-      `status: completed`.
-   2. Re-render and confirm the derived state: all `.step-card` elements
-      completed, all criteria inputs `checked`, the three status
-      representations `completed`, cc1–cc3 checked and the
-      `completion-checklist` div carrying `all-complete`. The renderer
-      computes all of this from (a)–(c) — if something is missing, fix the
-      spec, never the HTML.
-   3. Any condition unmet → keep `status: in-progress` and write a
-      `## Completion Report` section in the spec (after
-      `## Acceptance Criteria`): one `- <exact step/criterion> — <reason>`
-      bullet per gap — never a generic "some steps incomplete". The
-      renderer turns it into the report list; when everything is resolved,
-      remove the section and the default "No items to report" sentence
-      returns.
-
-   Commit the source changes together with the updated spec and HTML when
-   implementation finishes.
+   `build` ships in this same plugin, so a resolution failure means a broken
+   skill reference, not a missing dependency — report it as an error rather
+   than degrading silently, then emit the implement prompt (`plan-implement`
+   meta tag) so the user can still proceed by pasting it.
 
    **If the user chooses `Run as workflow`:** Output the workflow prompt
    (from the `plan-workflow` meta tag) for the user to paste — the word
