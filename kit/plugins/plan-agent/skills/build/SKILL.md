@@ -2,7 +2,7 @@
 name: build
 description: "Implements a plan file that already exists. Walks its steps, ticks the spec, re-renders, and runs the completion gates. Use when asked to implement an existing plan."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill, ToolSearch, ExitPlanMode
-argument-hint: "[<plan.md|plan.html>] [<objective>] [--dir <path>]"
+argument-hint: "[<plan.md|plan.html>] [<objective>] [--type feature|fix|refactor|docs|chore] [--dir <path>]"
 model: opus
 ---
 
@@ -38,10 +38,11 @@ Per `references/resolve-plan.md`.
 ## Re-render (subroutine — referenced by every step below)
 
 ```bash
-RENDERER="${CLAUDE_PLUGIN_ROOT}/scripts/build-plan-html.mjs"
-[ -f "$RENDERER" ] || RENDERER="scripts/build-plan-html.mjs"
-node "$RENDERER" "<stem>.md" -o "<stem>.html"
+plan-agent-render "<stem>.md" -o "<stem>.html"
 ```
+
+Invoke `plan-agent-render` by bare name, never by path (this plugin's `bin/`
+is on `PATH`).
 
 `<stem>` is the resolved plan's path without its extension, fixed in Step 1
 (the subroutine is defined here but never runs before Step 1 resolves it).

@@ -146,7 +146,8 @@ which have no owning plan.
   (`docs/plans/<slug>.md`) — the same value `{{SOURCE_PLAN}}` carries.
 - **If that `.md` does not exist:** skip the write-back, still generate the
   prototype, and print exactly one line telling the user to run
-  `node scripts/extract-plan-spec.mjs <plan>.html > <plan>.md` first if they
+  `node <path-to-plan-agent-plugin>/scripts/extract-plan-spec.mjs PLAN.html > PLAN.md` (substituting the real
+  plan filename — the shell reads `<` as a redirection, so it cannot be a placeholder here) first if they
   want the back-link. Most committed plans are legacy HTML with no spec
   sibling; materializing one as a side effect would silently rewrite a plan the
   user never asked us to touch.
@@ -187,8 +188,10 @@ credential, token, key, email, or other PII.
 ## Step 9 — Index, preview, report
 
 - The `PostToolUse` hook auto-rebuilds `docs/prototypes/index.html` on the
-  write. If it did not run (e.g. hook disabled), run
-  `bash "${CLAUDE_PLUGIN_ROOT}/hooks/build-prototypes-index.sh" "${CLAUDE_PROJECT_DIR:-$PWD}"`.
+  write. If it did not run (e.g. hook disabled), run `plan-agent-prototypes-index`
+  — it ships with this plugin in `bin/`, which Claude Code puts on the Bash
+  tool's `PATH`, and defaults to the current directory. Invoke it by bare name,
+  never by path.
 - Open the prototype in the browser, screenshot it, and `SendUserFile` the
   prototype path.
 - Report **what to validate**: the data shapes, the core flow, and whether the

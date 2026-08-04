@@ -8,7 +8,7 @@ This plugin packages the Plan Mode workflow (Steps 0 through 8, ending in Implem
 
 Plans are written as **self-contained `.html` files** — interactive, visually rich, and openable directly in a browser. No markdown output. Complex plans include a workflow prompt for parallel subagent orchestration via Claude Code's `/workflows` runtime.
 
-The `review-plan` skill uses an **Agent Team** (five core reviewers plus two UI-conditional reviewers) to review implementation plans in parallel, synthesize findings, and apply improvements directly in place. Detects UI signals (React, Vue, buttons, modals, etc.) and conditionally runs UX and accessibility reviewers when present. Requires Agent Teams feature flag and Claude Code ≥ 2.1.32.
+The `review-plan` skill uses an **Agent Team** (seven core reviewers plus three UI-conditional reviewers) to review implementation plans in parallel, synthesize findings, and apply improvements directly in place. Detects UI signals (React, Vue, buttons, modals, etc.) and conditionally runs UX, accessibility, and frontend reviewers when present. Requires Agent Teams feature flag and Claude Code ≥ 2.1.32.
 
 The `finalize-plan` skill reviews a plan for codebase implementation evidence, verifies each acceptance criterion individually, and marks the plan completed.
 
@@ -22,7 +22,9 @@ Installers get on-demand planning with argument support, issue ingestion, built-
 |-----------|------|-----------|
 | `implementation-plan` | Skill | Command (`/plan-agent:implementation-plan <objective>`) or auto-activates on plan-document intent |
 | `build-proposal` | Skill | Command (`/plan-agent:build-proposal <idea>`) or auto-activates on idea / "should-we" / compare-and-align intent — converges on a saved prompt at `docs/prompts/proposal-<slug>.md` |
-| `build` | Skill | Command (`/plan-agent:build [<plan>] [<objective>]`) or auto-activates on "implement / build this plan" intent — implements a plan and runs its gates; with no plan named, the command form authors one first through proposal → plan → review |
+| `build` | Skill | Command (`/plan-agent:build [<plan>] [<objective>] [--type <kind>]`) or auto-activates on "implement / build this plan" intent — implements a plan and runs its gates; with no plan named, the command form authors one first through proposal → plan → review |
+| `fix` | Command | Typed entry point — `/plan-agent:fix <objective>` runs the `build` chain with `--type fix` |
+| `refactor` | Command | Typed entry point — `/plan-agent:refactor <objective>` runs the `build` chain with `--type refactor` |
 | `review-plan` | Skill | Manual only — invoke as `/plan-agent:review-plan [plan-path]` or auto-activates when you ask to review a plan (requires Agent Teams) |
 | `review-plan-bg` | Command | Background dispatcher — invoke as `/plan-agent:review-plan-bg <path>` to run the review team without blocking |
 | `finalize-plan` | Skill (`disable-model-invocation`) | Manual only — invoke as `/plan-agent:finalize-plan [plan-filename.html] [--all]` |
@@ -90,7 +92,7 @@ Passing a `.md` plan path enters **conversion mode**: the markdown is treated as
 **Full invocation syntax:**
 
 ```
-/plan-agent:implementation-plan <issue-url|#n> | <plan.md> | <objective> [--quick] [--no-clarify] [--no-align] [--no-interview] [--workflow] [--type feature|fix|refactor|docs|chore] [--template default] [--dir <path>] [--priority low|medium|high|critical]
+/plan-agent:implementation-plan <issue-url|#n> | <plan.md> | <objective> [--quick] [--no-clarify] [--no-align] [--no-interview] [--workflow] [--from-prompt <path>] [--type feature|fix|refactor|docs|chore] [--template default] [--dir <path>] [--priority low|medium|high|critical]
 ```
 
 **Flags:**
@@ -101,6 +103,7 @@ Passing a `.md` plan path enters **conversion mode**: the markdown is treated as
 | `--no-clarify` | Skip Step 1 Clarify only |
 | `--no-align` | Skip Step 5 Align only |
 | `--no-interview` | Skip Step 5b Interview (built-in structured interview) |
+| `--from-prompt <path>` | **Prompt-source mode.** Read a saved proposal prompt for context, then author through the normal drafting workflow. Not conversion mode: proposal headings are input, not a step list to transcribe. Passing the same path positionally instead would trigger conversion mode, which is the bug this flag exists to prevent; the two are mutually exclusive and an ambiguous mix is rejected |
 | `--type <kind>` | Set plan `type` in HTML metadata (`feature`, `fix`, `refactor`, `docs`, `chore`) |
 | `--template <name>` | Reserved — only `default` is currently supported; additional variants are planned |
 | `--dir <path>` | Override directory resolution; write the plan to this path |
@@ -115,6 +118,7 @@ Passing a `.md` plan path enters **conversion mode**: the markdown is treated as
 /plan-agent:implementation-plan --dir tmp/plans add dark mode toggle
 /plan-agent:implementation-plan --no-interview fix a config typo
 /plan-agent:implementation-plan --workflow migrate all API endpoints to v2
+/plan-agent:implementation-plan add SSO to the admin console --from-prompt docs/prompts/proposal-admin-sso.md
 ```
 
 **Smart defaults when flags are absent:** `--type` is inferred from the leading verb (`add`/`create`/`build` → `feature`; `fix`/`patch` → `fix`; `refactor`/`rename` → `refactor`; `document`/`docs` → `docs`). All skip-flags (`--quick`, `--no-clarify`, `--no-align`, `--no-interview`) and `--workflow` are opt-in only and are never inferred automatically.
@@ -131,11 +135,18 @@ The skill enforces the full Steps 1–8 workflow:
 7. **Status** — tracks `todo` → `in-progress` → `completed` via `<html data-status>` and `<meta name="plan-status">`
 8. **Open** — opens the plan in a browser and presents a next-action menu: **Implement now**, **Run as workflow** (complex plans), **Review the plan**, **Edit the plan**, or **Exit**
 
+**Step 8 exit menu — Implement now option:**
+
+`Implement now` triggers a this-session-or-fresh-session sub-choice:
+
+- **This session:** invokes `Skill(skill: "plan-agent:build", args: "<spec path>")` and builds immediately, with the whole planning conversation still loaded.
+- **Fresh session:** sets status to `in-progress`, prints the implement prompt, and stops so you can `/clear` and paste it into a clean context window. The prompt names the markdown spec, and the spec carries the whole plan, so nothing from the planning conversation is lost. Claude cannot clear its own context — `/clear` is a client command you type.
+
 **Step 8 exit menu — Review the plan option:**
 
 The exit menu always offers `Review the plan` as a one-click path to critique the freshly-generated plan before implementing it. Selecting it triggers a foreground-or-background sub-choice:
 
-- **Run now (foreground):** invokes `Skill(skill: "plan-agent:review-plan", args: "<plan path>")`, runs the seven-reviewer Agent Team in-session, then re-renders the updated plan and loops back to the menu.
+- **Run now (foreground):** invokes `Skill(skill: "plan-agent:review-plan", args: "<plan path>")`, runs the ten-reviewer Agent Team in-session, then re-renders the updated plan and loops back to the menu.
 - **Background:** invokes `Skill(skill: "plan-agent:review-plan-bg", args: "<plan path>")`, dispatches the review team detached via `agent-review-plan`, and returns to the menu immediately; reopen the plan after completion to view applied updates.
 
 **Adaptive menu swap:** The `AskUserQuestion` tool is capped at 4 options. When a workflow prompt is present the menu would otherwise have 5 slots, so `Edit the plan` is dropped from that variant — the full ordering becomes: `Implement now` / `Run as workflow` / `Review the plan` / `Exit`. Without a workflow prompt all four options appear: `Implement now` / `Review the plan` / `Edit the plan` / `Exit`.
@@ -146,7 +157,7 @@ If Agent Teams are unavailable (Claude Code < 2.1.32 or `CLAUDE_CODE_EXPERIMENTA
 
 Every plan is a single self-contained `.html` file (no CDN links, no external assets):
 
-- **Compute-on-read spec** — the visible plan DOM is the single source of truth; `node scripts/extract-plan-spec.mjs <plan>` derives a spec-only markdown rendition on demand (objective, context, files, steps with why/verify, tests, acceptance criteria, verification) — a few thousand tokens of spec instead of the full ~21k styled HTML. New plans embed nothing; legacy plans that still carry a `<script type="text/markdown" id="plan-digest">` block are read from it verbatim (un-guarded). Status, checkbox, and progress state are never part of the spec
+- **Compute-on-read spec** — the visible plan DOM is the single source of truth; `node <path-to-plan-agent-plugin>/scripts/extract-plan-spec.mjs <plan>` derives a spec-only markdown rendition on demand (objective, context, files, steps with why/verify, tests, acceptance criteria, verification) — a few thousand tokens of spec instead of the full ~21k styled HTML. New plans embed nothing; legacy plans that still carry a `<script type="text/markdown" id="plan-digest">` block are read from it verbatim (un-guarded). Status, checkbox, and progress state are never part of the spec
 - **Status badge** — colour-coded: grey = todo, amber = in-progress, green = completed
 - **Objective card** — prominent highlighted block at the top
 - **Implement prompt** — Copy button produces a concise action-oriented prompt with plan status, step/criteria progress counts, and numbered instructions to implement directly from the plan file
@@ -165,16 +176,30 @@ Open the `.html` file directly in any browser. No server required.
 Read a plan's spec without paying for the styled HTML:
 
 ```bash
-node scripts/extract-plan-spec.mjs docs/plans/<plan>.html
+# Run from your own shell, with a literal path to the installed plugin.
+# Claude Code's Bash tool rejects commands containing shell expansion, so an
+# agent cannot invoke this via a plugin-root variable — see CHANGELOG 8.2.1.
+#
+# Resolve exactly one script first: the cache can hold several plan-agent
+# versions (and several marketplace copies), and a bare glob would expand to
+# every match — node would run the first and silently read the second as the
+# plan path. Sorting on the version segment (not the whole path) is what makes
+# newest actually win: 8.10.0 must beat 8.9.0 even under a later marketplace
+# directory. Newest version wins, as the gallery hook also does.
+EXTRACTOR="$(ls -1 ~/.claude/plugins/cache/*/plan-agent/*/scripts/extract-plan-spec.mjs 2>/dev/null \
+  | awk -F/ '{print $(NF-2)"\t"$0}' | sort -V | tail -1 | cut -f2)"
+# PLAN.html is a stand-in for your plan's filename — angle-bracket placeholders
+# cannot be used here, since the shell reads `<` as an input redirection.
+node "$EXTRACTOR" docs/plans/PLAN.html
 ```
 
 The extractor reads an embedded `#plan-digest` block when one is present (legacy plans, un-guarded to clean markdown) and otherwise derives the spec from the visible DOM — so every plan resolves the same way, old or new. Each plan is a single self-contained HTML file, so the implement, goal, and workflow prompts it ships reference the plan **by path** — Claude reads the HTML directly, with no dependency on this script in the target repo. The extractor is a token-efficiency tool for callers that have it on hand (the review team, or manual inspection): roughly an order of magnitude fewer tokens than the full styled HTML, with a full-HTML fallback when it isn't available. **Caveat:** new plans embed no digest, so the old `awk '…id="plan-digest"…'` one-liner returns empty on them — use the extractor (or read the HTML) instead. Legacy embedded plans can still be re-seeded with `node scripts/backfill-plan-digests.mjs [--dry-run]` (idempotent; skips plans it cannot fully parse rather than emitting partial digests).
 
 #### `review-plan` — Manual invoke or auto-activate
 
-Reviews implementation plans using a seven-reviewer Agent Team (five core reviewers plus two UI-conditional reviewers). Detects UI signals and conditionally spawns UX and accessibility reviewers when present. Synthesizes findings and applies improvements directly to the source plan in place.
+Reviews implementation plans using a ten-reviewer Agent Team (seven core reviewers plus three UI-conditional reviewers). Detects UI signals and conditionally spawns UX, accessibility, and frontend reviewers when present. Synthesizes findings and applies improvements directly to the source plan in place.
 
-Reviewers read the plan's spec via `node scripts/extract-plan-spec.mjs` rather than the full HTML — roughly an order of magnitude fewer tokens per reviewer per cycle — falling back to the full HTML if the extractor can't run. The lead keeps reading the full HTML for selector-based edits.
+Reviewers read the full plan HTML. They are scoped to `Bash(git *)` and do **not** run the spec extractor: Claude Code's Bash tool rejects any command containing `${...}` shell expansion before permission rules are consulted, so a `${CLAUDE_PLUGIN_ROOT}`-anchored invocation is unrunnable by any agent at any permission level — no `tools:` grant can enable it. To get the cheaper spec read, run the extractor yourself with a literal path (see above) and paste the output into the review. See CHANGELOG 8.2.1.
 
 **Requires:** Agent Teams enabled (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `~/.claude/settings.json`) and Claude Code ≥ 2.1.32.
 
@@ -197,7 +222,7 @@ Reviewers read the plan's spec via `node scripts/extract-plan-spec.mjs` rather t
 
 #### `review-plan-bg` — Background command
 
-Dispatches the `agent-review-plan` background agent to run the full seven-reviewer team without blocking the session. Returns an ack immediately; you are notified when it completes.
+Dispatches the `agent-review-plan` background agent to run the full ten-reviewer team without blocking the session. Returns an ack immediately; you are notified when it completes.
 
 ```
 /plan-agent:review-plan-bg docs/plans/add-dark-mode-toggle.html
@@ -216,14 +241,14 @@ The skill spawns the following reviewers:
   - UX — user flows, error states, loading states, interaction clarity, responsive design, discoverability
   - Accessibility — WCAG 2.1 AA compliance, keyboard navigation, screen reader support, semantic HTML, motion
 
-**UI signal detection:** Scans the plan HTML for references to React, Vue, Svelte, `.tsx`/`.jsx`/`.css`/`.html`, `className`, `style`, Tailwind, buttons, modals, forms, dialogs, dropdowns, pages, components. If 2+ signals or UI-specific keywords are found, UX and accessibility reviewers are spawned.
+**UI signal detection:** Scans the plan HTML for references to React, Vue, Svelte, `.tsx`/`.jsx`/`.css`/`.html`, `className`, `style`, Tailwind, buttons, modals, forms, dialogs, dropdowns, pages, components. If 2+ signals or UI-specific keywords are found, the UX, accessibility, and frontend reviewers are spawned.
 
 The workflow:
 
 1. **Resolve** — locates the HTML plan (`--dir` override, or glob `docs/plans/*.html` excluding `index.html`, or newest recent)
 2. **Verify** — confirms Agent Teams are available (feature flag + version check)
 3. **Detect** — scans plan HTML for UI signals to determine reviewer roster
-4. **Spawn** — creates the team and spawns 5 core + optional 2 UI reviewers in parallel
+4. **Spawn** — creates the team and spawns 7 core + optional 3 UI reviewers in parallel
 5. **Collect** — waits for all reviewers to report findings
 6. **Synthesize** — aggregates findings into a structured report (Executive Summary, Role-by-Role, Agreements/Conflicts, Highest-Risk Issues)
 7. **Update** — applies inline edits to the plan HTML (step refinements, criteria corrections, verification improvements) and appends a collapsible "Team Review" section
@@ -233,7 +258,7 @@ On success:
 
 ```
 Reviewing plan: docs/plans/add-dark-mode-toggle.html
-UI signals detected — running 7 reviewers
+UI signals detected — running 10 reviewers
 Plan updated in place: docs/plans/add-dark-mode-toggle.html
 ```
 
@@ -479,6 +504,9 @@ The hook and skill both read a `planAgent` object from `.claude/settings.json` (
 plan-agent/
   .claude-plugin/
     plugin.json             — Plugin manifest
+  bin/                      — On the Bash tool's PATH; invoke by bare name, never by path
+    plan-agent-render            — Renders a plan spec (wraps scripts/build-plan-html.mjs)
+    plan-agent-prototypes-index  — Rebuilds the prototypes gallery (wraps hooks/build-prototypes-index.sh)
   skills/
     implementation-plan/
       SKILL.md              — Workflow, arguments, spec authoring, render pipeline
@@ -522,7 +550,7 @@ plan-agent/
         proposal-prompt-template.md   — proposal-type template (11 proposal-shaped slots)
         best-practices-reference.md   — Anthropic prompting guidance
   agents/
-    plan-reviewer-*.md      — Seven reviewer agent definitions (5 core + 2 UI-conditional)
+    plan-reviewer-*.md      — Ten reviewer agent definitions (7 core + 3 UI-conditional)
     agent-review-plan.md    — Background agent for fire-and-forget review
   commands/
     review-plan-bg.md       — Background review dispatcher command
@@ -552,7 +580,7 @@ Command-invocable via `/plan-agent:implementation-plan <objective>` and model-in
 - **Invocation & Arguments** — on command invocation, reads `$ARGUMENTS` and parses objective + flags (`--quick`/`--no-clarify`/`--no-align`/`--no-interview`/`--type`/`--template`/`--dir`/`--priority`); on model invocation, derives the objective from conversation context and runs the full workflow by default
 - **Workflow Steps 1–8** — Clarify, Create, Frontmatter, Rename, Align, Interview (Step 5b), Commit, Status, Open
 - **Implement-now handoff** (Step 8) — `Implement now` delegates to the `build` skill, which owns the implementation loop and its three gates. `implementation-plan` itself never writes source files; its Scope Constraint is never lifted
-- **Markdown-spec pipeline** — the agent authors a compact Markdown plan spec (the committed source of truth) and renders it deterministically with the bundled `scripts/build-plan-html.mjs`; the renderer owns all presentation (CSS, JS, meta tags, derived implement/goal/workflow prompts, effort level, file-tree) *and* all progress state: `- [x]` criteria bullets, `[x]` step markers, and an optional `## Completion Report` section render as checked boxes, completed step cards, the derived completion checklist, and the report list — status/checkbox changes are Markdown edits plus a re-render, never HTML surgery
+- **Markdown-spec pipeline** — the agent authors a compact Markdown plan spec (the committed source of truth) and renders it deterministically with the bundled `plan-agent-render` (a `bin/` wrapper around `scripts/build-plan-html.mjs`); the renderer owns all presentation (CSS, JS, meta tags, derived implement/goal/workflow prompts, effort level, file-tree) *and* all progress state: `- [x]` criteria bullets, `[x]` step markers, and an optional `## Completion Report` section render as checked boxes, completed step cards, the derived completion checklist, and the report list — status/checkbox changes are Markdown edits plus a re-render, never HTML surgery
 - **Guidelines library** — `guidelines/planning-principles.md`, `section-catalog.md`, `right-sizing.md`, and `writing-style.md` drive judgment-based structure: the required core (objective, steps, acceptance criteria, verification) is always present, everything else earns its place per plan (`minimal`/`adr`/`spike` ship as right-sizing guidance, not extra templates)
 - **Spec starter** — `reference/SKELETON.md` is the copyable spec skeleton in the exact format the renderer parses
 

@@ -1,6 +1,269 @@
 # Changelog
 
 
+## 8.5.0 — typed build entry points (2026-08-03)
+
+### Added
+
+- **`/plan-agent:fix` and `/plan-agent:refactor`.** Thin dispatchers over the
+  `build` chain that prepend `--type fix` / `--type refactor`. They restate none
+  of the workflow — the proposal gate, plan authoring, review, and the
+  completion gates all remain `build`'s. The default is **prepended** precisely
+  because `--type` resolves last-wins: `/plan-agent:fix task --type docs`
+  expands to `--type fix task --type docs`, so the user's `docs` is last and
+  wins. Appending would invert that and let the command's default silently beat
+  an explicit override.
+- **`build` accepts `--type <kind>`** and forwards it to `implementation-plan`
+  on both Step 1b paths. Previously the plan type could only be inferred from
+  the objective's leading verb, against a closed vocabulary — `clean up the
+  token parser` produced `chore`, not `refactor`.
+- **`implementation-plan` accepts `--from-prompt <path>`** — prompt-source
+  mode. Reads a saved proposal prompt for context and authors a plan through the
+  normal drafting workflow. Distinct from conversion mode: a proposal argues
+  whether and what, a plan states how, so proposal headings are input rather
+  than a step list to transcribe. When `--type` is absent, a source `type:` is
+  used **only if it is already a valid plan type**; anything else falls through
+  to leading-verb inference on the objective. No mapping table — the usual
+  `--from-prompt` target is a saved prompt, and `prompt` stamps its own genre
+  classifier there (`type: proposal` on every prompt `build-proposal` saves),
+  which says nothing about the plan's type and would fail the render if carried
+  across.
+
+### Fixed
+
+- **The proposal path no longer lands in conversion mode.** `build`'s chain
+  handed the prompt path to `implementation-plan` as prose
+  (`author an execution plan from the proposal prompt at <path>.md`), but the
+  parser scans for the first non-flag `.md` token *anywhere* in the string, so
+  the prompt was picked up as `$MD_SOURCE` and restructured into a plan whose
+  steps restated proposal headings. The chain's prose guard against this
+  ("never a bare `.md` first token") was unenforceable, since leading with prose
+  did not stop the scan. The path now travels behind `--from-prompt`, where a
+  flag value is not a positional token and the ambiguity cannot arise.
+- **`build-proposal`'s Step 8 handoff carried the same bug** and is fixed the
+  same way. The printed command a user copies by hand now reads
+  `/plan-agent:implementation-plan <objective> --from-prompt <path>`. This is the
+  path taken when someone runs `build-proposal` on its own rather than through
+  the `build` chain, so fixing only the chain would have left the bug reachable.
+- **The proposal path no longer types every plan as `chore`.** That same invoke
+  led with the verb `author`, which matches no inference bucket. Plans authored
+  through the proposal gate now take an explicit `--type`, the proposal's own
+  frontmatter type, or the real objective's verb — in that order.
+
+
+## 8.4.0 — implement in a fresh context window (2026-08-02)
+
+### Added
+
+- **`Implement now` asks where to implement.** Step 8's `Implement now` now
+  opens a sub-choice — `This session` or `Fresh session` — mirroring the
+  existing `Review the plan` foreground/background pattern rather than adding a
+  fifth top-level option (`AskUserQuestion` caps at 4, and both menu variants
+  are already full).
+- **`Fresh session` hands off instead of building.** It sets the plan to
+  `in-progress`, re-renders, prints the `plan-implement` prompt, and stops so
+  the user can `/clear` and paste it into a clean context window. The handoff is
+  lossless because the prompt names the markdown spec and the spec carries the
+  whole plan — the planning conversation is not load-bearing after Step 8.
+- **The skill states that it cannot clear its own context.** `/clear` is a
+  client command the user types; no tool triggers it. The branch is written to
+  print the instruction and stop, never to claim the context was cleared.
+
+
+## 8.3.0 — the plan renderer is reachable again, via `bin/` (2026-08-02)
+
+### Added
+
+- **`bin/plan-agent-render`** and **`bin/plan-agent-prototypes-index`** — thin
+  wrappers around `scripts/build-plan-html.mjs` and
+  `hooks/build-prototypes-index.sh`. Claude Code adds every enabled plugin's
+  `bin/` to the Bash tool's `PATH`, so skills invoke them by bare name with no
+  path, no `${VAR}`, and no environment dependency. This is the only invocation
+  shape a skill can actually run, and it is now the plugin's answer to "how does
+  a bundled script get called at all". Each wrapper resolves its target through
+  its own `dirname "$0"`, so it works from any install location — for a `#!`
+  script the kernel passes the pathname given to `execve` (the absolute path the
+  `PATH` lookup resolved) as the script argument, so `$0` is that absolute path
+  and never the bare word typed. Verified identical under bash, zsh, and sh.
+
+### Fixed
+
+- **The four call sites 8.2.1 ledgered as known-broken now work.** All four
+  spelled a Bash command as `node "${CLAUDE_PLUGIN_ROOT}/…"`, which the Bash
+  tool refuses outright with "error: Contains expansion" before permission rules
+  are consulted — verified on 2.1.220, unrunnable even for an agent holding
+  unrestricted `Bash` and with a matching `--allowedTools` rule. The defect runs
+  deeper than the guard: `CLAUDE_PLUGIN_ROOT` is a config-file substitution
+  (`hooks.json`, MCP/LSP, monitors) and is **not exported into the Bash tool's
+  environment**, so the command would have expanded to a bare `/scripts/…` even
+  without the refusal. Sites fixed:
+  - `skills/implementation-plan/SKILL.md` — the plan renderer, the plugin's
+    most-used script. Every plan this skill wrote depended on the model
+    improvising a path after the documented command was refused; that only ever
+    resolved inside this repo, where `scripts/build-plan-html.mjs` happens to
+    sit at the root.
+  - `skills/build/SKILL.md` and `skills/finalize-plan/references/write-completions.md`
+    — the shared re-render subroutine. Its `RENDERER=…` / `[ -f "$RENDERER" ] ||`
+    fallback dance was doubly dead: the assignment carried an expansion too, and
+    the fallback named a repo-local path no installed user has. Both now call
+    `plan-agent-render` directly.
+  - `skills/prototype/SKILL.md` — the manual prototypes-index rebuild, now
+    `plan-agent-prototypes-index`. The wrapper defaults to the current directory
+    (replacing the unrunnable `"${CLAUDE_PROJECT_DIR:-$PWD}"`, whose variable is
+    likewise absent from the Bash tool's env) and closes stdin, so a manual run
+    cannot block reading the PostToolUse payload the underlying script also
+    accepts.
+- **`scripts/build-dist.mjs` would have dropped `bin/` from the published
+  tree.** It copies only KEEP-listed top-level entries, so wrappers that work
+  from source would have been missing for every marketplace install — the same
+  shape as 8.1.1's defect, where the extractor's library shipped but the
+  extractor did not. `bin` is now on the allowlist; `cpSync` preserves the
+  executable bit for these extensionless files.
+
+### Tests
+
+- `tests/plugins/test-extractor-wiring.sh`: **check 9 now scans every
+  model-facing markdown file** in the plugin — `skills/`, `agents/`,
+  `commands/` — minus whatever check 10 still ledgers, instead of just the
+  review surface. The ledger became the single exclusion list, so emptying it
+  later needs no edit to check 9, and the four files repaired here are now
+  actively guarded against regressing to `${CLAUDE_PLUGIN_ROOT}`.
+  `README.md` joins `CHANGELOG.md` in the exclusions, deliberately: its
+  `node "$EXTRACTOR" …` snippet is correct precisely because it is prefaced
+  "Run from your own shell, with a literal path" and sets `$EXTRACTOR` itself.
+  A human shell has no expansion guard, and a false positive there is what
+  would tempt the next author to loosen the pattern. Every real defect this
+  check exists for lived in a model-facing file.
+- **Check 10's ledger is updated, not deleted — it does not empty here.** It
+  listed 8 sites across 6 files; the 4 fixed above are gone, leaving
+  `skills/plans-library/SKILL.md:3` and `skills/plans-open/SKILL.md:1`. Those
+  are a different defect class and out of scope: not bundled-script paths but
+  multi-line snippets whose variables are set in the same shell block
+  (`while IFS= read -r f` feeding `python3 - "$f"`,
+  `python3 - "$PLANS_DIR/index.html" "$SOURCE_COUNT"`, and the
+  `realpath`/`open` fallback chain). Local definition does not help — the guard
+  is textual and rejects the command string before any shell sees it — so
+  repairing them means extracting two inline heredoc scripts into `scripts/`
+  with real CLIs. That is the gallery pipeline's own change, exactly as the
+  renderer pipeline was.
+- Two checks added for the wrappers: **check 11** asserts `plan-agent-render`
+  exists, is executable, and reaches `build-plan-html.mjs` through its own
+  `dirname "$0"` (exit 2 = the renderer's documented no-args usage code,
+  unreachable unless that hop landed), plus the exec bit, clean syntax, and an
+  existing target for the prototypes wrapper; **check 12** asserts `bin` is on
+  the dist KEEP allowlist.
+
+
+## 8.2.1 — reviewers stop documenting an extractor they cannot run (2026-08-02)
+
+### Fixed
+
+- **The reviewer spec-extraction path cannot work, and is now removed rather
+  than described.** 8.1.1 anchored all 15 extractor call sites to
+  `${CLAUDE_PLUGIN_ROOT}` to fix a cwd-relative path bug. That spelling is
+  correct for a `Read` tool path — no shell is involved — and fatal for a Bash
+  command: **Claude Code's Bash tool rejects any command whose text contains
+  `${VAR}` or `$VAR` with `error: Contains expansion`**, because it cannot
+  statically resolve the expansion. The refusal fires *before* permission rules
+  are consulted, so the invocation is unrunnable by every agent at every
+  permission level. 8.1.1 therefore did not restore the compute-on-read path it
+  set out to restore — it replaced one silent fallback with another.
+- **No `tools:` grant can fix it, so none was added.** All ten
+  `plan-reviewer-*` agents declare `tools: Read, Glob, Grep, Bash(git *)`, which
+  is genuinely enforced for markdown-defined agents (verified against 2.1.220:
+  `git status` runs, `node --version` is refused with "This command requires
+  approval"). But widening that grant would not have helped: a
+  prefix rule such as `Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/extract-plan-spec.mjs":*)`
+  can never match, because the expansion guard rejects the command before rule
+  matching begins. A literal-path grant cannot ship either — the install path
+  differs per machine. All ten reviewer briefs and all ten agent defs now instruct
+  a plain `Read` of the plan HTML, which is what every review has actually been
+  doing since the feature shipped.
+- **Cost note, stated plainly:** this does not recover the ~10x per-reviewer
+  token saving the README advertised — it removes a claim that was never true in
+  practice. Run `extract-plan-spec.mjs` yourself with a literal path and paste
+  the spec into the review to get that saving today.
+- **Out of scope, deliberately left unfixed:** the same defect affects eight
+  further call sites across six files, including `build-plan-html.mjs` (the
+  plan renderer) in `implementation-plan`, `build`, `finalize-plan`,
+  `prototype`, `python3` heredocs in `plans-library`, and `realpath` calls in
+  `plans-library` and `plans-open`. Repairing the
+  renderer pipeline is a separate change with its own design call. Check 10 of
+  `tests/plugins/test-extractor-wiring.sh` pins that list so it can neither grow
+  nor quietly shrink.
+
+### Changed
+
+- `tests/plugins/test-extractor-wiring.sh` checks 5, 6, and 9 were **inverted**.
+  They previously *required* the broken wiring — check 9 mandated the
+  `${CLAUDE_PLUGIN_ROOT}` anchoring that makes the command unrunnable. They now
+  fail if a reviewer brief or agent def documents an invocation it cannot
+  execute. Check 8, added in 8.1.1 to prove reachability, runs the extractor
+  straight from bash rather than through Claude Code's Bash tool, so it proved
+  the *file* loads and never that the *documented invocation* is executable —
+  that gap is why the suite stayed green while the feature was dead. New check
+  10 ledgers the four unfixed sites.
+- `tests/plugins/test-agent-frontmatter.sh` now asserts the reviewer Bash grant
+  is **exactly** `Bash(git *)`. It previously rejected bare `Bash` and tolerated
+  any `Bash(...)`, so `Bash(node *)` would have passed while granting arbitrary
+  writes via `node -e "require('fs').writeFileSync(...)"`. It covers all ten
+  `plan-reviewer-*` agents.
+
+## 8.2.0 — `review-plan` gains product, security, and frontend reviewers (2026-08-02)
+
+### Added
+
+- **Three reviewers fold the `product-plans` panel's unique roles into
+  `review-plan`.** The panel covered PM, security, and frontend-engineering
+  lenses that no plan reviewer had; the two skills otherwise overlapped only on
+  UX and accessibility. New agents:
+  - `plan-reviewer-product` (core) — user problem, scope sizing, falsifiable
+    success criteria, load-bearing assumptions, rollout readiness.
+  - `plan-reviewer-security` (core) — authn/authz, data handling, trust
+    boundaries, secrets, dependency risk. Cites CWE/OWASP identifiers, and
+    reports `Exposure: none` rather than manufacturing findings on plans with no
+    security surface.
+  - `plan-reviewer-frontend` (UI-conditional) — component boundaries, state
+    placement, render cost, design-system alignment. Runs behind the same
+    `ui_signals_present` gate as UX and accessibility.
+- Spawn prompts in `references/role-prompts.md` and role sections in
+  `references/output-template.md` for all three.
+
+### Changed
+
+- The roster is now **10 reviewers — 7 core + 3 UI-conditional** (was 7: 5 + 2).
+  Step 3b and Step 4 announcements report the new counts.
+
+## 8.1.1 — the spec extractor now ships with the plugin (2026-08-02)
+
+### Fixed
+
+- **`scripts/extract-plan-spec.mjs` was never shipped.** The plugin bundled
+  `scripts/lib/plan-spec.mjs` — the library the extractor imports — but not the
+  extractor itself, so the shared lib was orphaned in the published tree and no
+  installed user could run the compute-on-read spec path. The review team fell
+  back to reading full plan HTML on every run, costing roughly an order of
+  magnitude more tokens per reviewer per cycle than the README advertises, with
+  nothing surfacing the degradation. The extractor is now vendored alongside
+  `build-plan-html.mjs` and `lib/`, and is covered by the byte-identity parity
+  check in `tests/plugins/test-build-plan-html.mjs`.
+- **Extractor invocations were not plugin-root anchored.** All 15 live call
+  sites — the 7 reviewer briefs in `review-plan/references/role-prompts.md`, the
+  7 `plan-reviewer-*` agent defs, and `prototype/SKILL.md` — invoked a bare
+  `node scripts/extract-plan-spec.mjs`, which resolves against the user's cwd
+  and therefore only ever resolved inside this repo. They now use
+  `${CLAUDE_PLUGIN_ROOT}/scripts/extract-plan-spec.mjs`, matching every other
+  shipped script in the kit. Generated plans are untouched — they stay
+  self-contained and reference the plan by path, as before.
+- **`tests/plugins/test-extractor-wiring.sh` could not catch either defect.**
+  Its 7 checks grepped for the *string* `extract-plan-spec.mjs` in plugin docs,
+  proving the wiring was described but never that it was reachable, so the suite
+  stayed green throughout. Two checks added: check 8 runs the plugin's own copy
+  and asserts the documented misuse exit code (2), which is only reachable once
+  the file exists and its `./lib/plan-spec.mjs` import has resolved inside the
+  plugin tree; check 9 fails on any unanchored invocation.
+
+
 ## 8.1.0 — `prompt` drafts for Claude 5 generation models (2026-08-01)
 
 ### Added

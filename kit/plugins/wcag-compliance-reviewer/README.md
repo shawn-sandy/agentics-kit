@@ -312,15 +312,20 @@ Why: Screen readers announce "logo.png" without alt text, which is not meaningfu
 
 ## Bundled Resources
 
-### Scripts (scripts/)
+### Scripts (skills/wcag-compliance-reviewer/scripts/)
 
 **check_wcag.py** - Automated accessibility checker
 
 Static analysis for HTML/CSS/React/TypeScript files:
 
 ```bash
-python scripts/check_wcag.py path/to/component.tsx
+wcag-check path/to/component.tsx
 ```
+
+Invoked through the bundled `bin/wcag-check` wrapper, which the plugin loader
+puts on the Bash tool's `PATH`. A `${CLAUDE_PLUGIN_ROOT}`-anchored command
+cannot be used here: the Bash tool refuses any command text containing a shell
+expansion.
 
 **Catches ~30% of issues:**
 - Missing alt text

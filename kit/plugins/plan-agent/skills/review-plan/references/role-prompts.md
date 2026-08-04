@@ -1,6 +1,6 @@
 # Reviewer Role Prompts
 
-These prompts are used to brief each teammate reviewer. Substitute `<ABSOLUTE_PATH>` with the resolved plan path. Every brief instructs the reviewer to read the plan's spec via the extractor (`node scripts/extract-plan-spec.mjs`) rather than the full HTML, with a full-HTML fallback; the lead keeps reading the full HTML for selector-based edits.
+These prompts are used to brief each teammate reviewer. Substitute `<ABSOLUTE_PATH>` with the resolved plan path. Every brief instructs the reviewer to read the plan HTML directly with the `Read` tool. Reviewers are scoped to `Bash(git *)` and cannot run the spec extractor — see the note in `../SKILL.md`.
 
 ## Core Reviewers (always spawned)
 
@@ -8,11 +8,7 @@ These prompts are used to brief each teammate reviewer. Substitute `<ABSOLUTE_PA
 
 Review the implementation plan at `<ABSOLUTE_PATH>` from an **architecture** lens: component boundaries, layer separation, data flow, integration with existing patterns, and system design coherence.
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - Component structure and boundaries
@@ -44,11 +40,7 @@ Architecture Review complete.
 
 Review the implementation plan at `<ABSOLUTE_PATH>` from a **completeness** lens: are all necessary steps present? Are they specific enough to execute? Are critical files omitted? Is the path from start to finish unbroken?
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - Step granularity and specificity
@@ -79,11 +71,7 @@ Completeness Review complete.
 
 Review the implementation plan at `<ABSOLUTE_PATH>` from a **testability** lens: are the changes properly tested? Is there an objective-verification test? Are acceptance criteria verifiable? Are test descriptions specific enough?
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - Test coverage (unit, integration, E2E as appropriate)
@@ -114,11 +102,7 @@ Testability Review complete.
 
 Review the implementation plan at `<ABSOLUTE_PATH>` from a **risk** lens: what could go wrong? Identify breaking changes, data safety issues, concurrency risks, dependency hazards, and rollback challenges.
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - Breaking API or data contract changes
@@ -150,11 +134,7 @@ Risk Review complete.
 
 Review the implementation plan at `<ABSOLUTE_PATH>` from a **conventions** lens: do the proposed changes fit the project's patterns, naming style, file organization, and code structure?
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - Naming consistency (camelCase, kebab-case, PascalCase)
@@ -182,6 +162,72 @@ Conventions Review complete.
 
 ---
 
+### Product Reviewer
+
+Review the implementation plan at `<ABSOLUTE_PATH>` from a **product** lens: is this worth building as scoped? Is the user problem stated, the scope right-sized, and success measurable?
+
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
+
+Focus on:
+- User problem and who the user is
+- Scope sizing — work bundled in that the objective does not require
+- Measurable, falsifiable success criteria (not restated tasks)
+- Load-bearing assumptions that are unstated
+- Rollout readiness — flags, staged launch, migration order, revert path
+- Tradeoffs being made without acknowledgement
+
+Report your findings by calling `SendMessage` with:
+
+```
+[Product Review]
+Value fit: <One sentence on whether the plan is worth building as scoped>
+Concerns:
+- <concern 1> (severity: critical|high|medium|low)
+- <concern 2> (severity: ...)
+- ...
+Recommendations:
+- <recommendation 1>
+- <recommendation 2>
+- ...
+Product Review complete.
+```
+
+---
+
+### Security Reviewer
+
+Review the implementation plan at `<ABSOLUTE_PATH>` from a **security** lens: authentication and authorization, data handling, trust boundaries, secrets, and dependency risk.
+
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
+
+Focus on:
+- Authentication, authorization, and least privilege
+- Sensitive data handling — storage, transit, retention, logging
+- Trust boundaries and server-side input validation
+- Secrets in code, arguments, or logs
+- New dependency and supply-chain risk
+- Plausible OWASP Top 10 exposure for this change
+
+Cite by identifier (CWE-79, OWASP A03), not URL. When the plan has no security surface, say so rather than manufacturing findings.
+
+Report your findings by calling `SendMessage` with:
+
+```
+[Security Review]
+Exposure: <critical|high|medium|low|none>
+Key concerns:
+- <concern 1> (severity: critical|high|medium|low)
+- <concern 2> (severity: ...)
+- ...
+Controls to add:
+- <control 1>
+- <control 2>
+- ...
+Security Review complete.
+```
+
+---
+
 ## Conditional Reviewers (spawned only when UI signals detected)
 
 ### UX Reviewer
@@ -190,11 +236,7 @@ Review the implementation plan at `<ABSOLUTE_PATH>` from a **UX** lens: is the u
 
 **This reviewer runs only on plans that mention React, Vue, Svelte, buttons, modals, forms, or other UI signals.**
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - User flows and happy-path clarity
@@ -228,11 +270,7 @@ Review the implementation plan at `<ABSOLUTE_PATH>` from an **accessibility** le
 
 **This reviewer runs only on plans that mention React, Vue, Svelte, buttons, modals, forms, or other UI signals.**
 
-Read the plan's spec with the extractor:
-
-    node scripts/extract-plan-spec.mjs '<ABSOLUTE_PATH>'
-
-This derives the spec from the plan's visible DOM (or an embedded digest on legacy plans). If the extractor cannot run, fall back to reading the full HTML file at `<ABSOLUTE_PATH>`. The spec carries the complete authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification; status and progress state are intentionally absent and out of review scope.
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
 
 Focus on:
 - Keyboard navigation and focus management
@@ -257,4 +295,40 @@ Recommendations:
 - <recommendation 2>
 - ...
 Accessibility Review complete.
+```
+
+---
+
+### Frontend Reviewer
+
+Review the implementation plan at `<ABSOLUTE_PATH>` from a **frontend engineering** lens: component boundaries, state placement, render cost, and design-system alignment.
+
+**This reviewer runs only on plans that mention React, Vue, Svelte, buttons, modals, forms, or other UI signals.**
+
+Read the plan HTML at `<ABSOLUTE_PATH>` with the `Read` tool. Its authored content — objective, context, files, steps with why/verify, tests, acceptance criteria, and verification — is what you review; status and progress state are intentionally out of review scope.
+
+Focus on:
+- Component boundaries and singular responsibility
+- State placement — local vs lifted vs global vs server, and whether the choice is stated
+- Render cost — bundle size, re-render triggers, virtualization, lazy loading
+- Design-system alignment — reuse of existing tokens, components, and patterns
+- Platform behavior — cross-browser gaps, SSR/hydration, touch vs pointer
+- Frontend test needs — component, interaction, visual-regression
+
+Stay out of user flows (UX Reviewer) and WCAG compliance (Accessibility Reviewer).
+
+Report your findings by calling `SendMessage` with:
+
+```
+[Frontend Review]
+Implementation fit: <One sentence on frontend soundness>
+Concerns:
+- <concern 1> (severity: critical|high|medium|low)
+- <concern 2> (severity: ...)
+- ...
+Recommendations:
+- <recommendation 1>
+- <recommendation 2>
+- ...
+Frontend Review complete.
 ```
