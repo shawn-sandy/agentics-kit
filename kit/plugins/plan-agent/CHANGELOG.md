@@ -1,6 +1,278 @@
 # Changelog
 
 
+## 9.0.0 — build resolves its arguments by explicit precedence (2026-08-06)
+
+`build` classified `$ARGUMENTS` by testing the **first positional token** for an
+`.md`/`.html` suffix or a `/`. A path is one filesystem name, so that test was
+never safe on prose: `/plan-agent:build A/B testing for checkout` read `A/B` as
+a relative filename, failed to resolve it, and stopped — the objective became a
+path. Separately, `--dir tmp/plans` with no plan named stripped to a bare
+`build`, found exactly one open spec in that directory, and refused to adopt it,
+because discovery was written as "an offer, never a silent pickup" and applied
+that rule to a candidate set of size one.
+
+Both are resolution defects, so resolution is now a numbered ladder that stops
+at the first matching rule.
+
+### Changed
+
+- **Argument precedence is explicit and total** (`references/invocation.md`).
+  Rule 0 strips `--dir`, `--type`, and `--continue` with their values, leaving a
+  **rest string**; every later rule reads that, never raw `$ARGUMENTS`. Rule 1
+  classifies the rest string as a path when it **names an existing file**, or
+  failing that when it is a **single whitespace-free token** carrying an
+  `.md`/`.html` suffix or a `/`. The shape test is what fixes the reported
+  misparse; the existence test in front of it is what keeps a path that *does*
+  contain a space from being caught by it (see the separate bullet below).
+  Rule 2 takes everything else as a free-text objective, and **the whole rest
+  string is the objective**, not its first token. Rule 3 handles an empty rest string. No
+  rule falls through on failure: a missing path still stops rather than
+  authoring a plan because of a typo.
+- **A lone discovery candidate is adopted, not offered.** One match
+  auto-selects and echoes why; several are offered capped at three plus
+  `None of these — author a new plan` with the suppressed count; zero asks for
+  an objective. The offer exists to prevent picking the wrong plan out of many,
+  and a set with no ambiguity in it has nothing to prevent — that mismatch is
+  what halted `--dir tmp/plans`.
+- **Headless runs take a named default and log it** rather than stopping at
+  every gate (`references/resolve-plan.md`). 8.x resolved the undefined-fallback
+  bug by making *every* gate stop when `AskUserQuestion` is unavailable, which
+  made headless runs useless. Each gate now carries a row in a defaults table —
+  discovery at each cardinality, the proposal-versus-direct gate, the
+  completed-spec precondition, the dirty-tree guard, and the phase checkpoint —
+  taken and logged as `Assumption: <choice> — <why>`. **One exception stops:**
+  multi-candidate discovery with nothing `in-progress`, where every candidate is
+  equally plausible and picking wrong writes source for a plan the user never
+  chose.
+- **A single-token slash-bearing objective still classifies as a path** — `A/B`,
+  `CI/CD`, `i18n/l10n` are indistinguishable from relative filenames. That stop
+  now names the misparse and offers both repairs (add a suffix, or reword)
+  instead of listing paths tried.
+- **An existing file beats the shape test.** Rule 1 tests the complete rest
+  string against the filesystem *before* the whitespace/suffix/slash shape
+  test. Without that ordering a plans directory containing a space
+  (`--dir "my plans"`) makes every real spec path — `my plans/add-foo.md` —
+  fail the whitespace rule and fall to Rule 2, which authors a *new* plan into
+  that same directory; `implementation-plan` Step 8's `Implement now` callback
+  then re-enters with the new path and misclassifies it again, authoring
+  without converging. The filesystem is ground truth, so `A/B testing for
+  checkout` still reaches Rule 2 while `my plans/add-foo.md` resolves as a
+  path.
+- **A value-taking flag with no value is a named error.** `--dir` with nothing
+  after it is "`--dir` requires a path"; `--type` with nothing after it names
+  the valid set. Covers the flag-shaped-value case too — `--dir --continue`
+  must not consume `--continue` as a directory.
+  Both silent alternatives were live bugs: dropping the flag resolves the
+  default plans directory while the user believes they overrode it, and leaving
+  `--dir` in the rest string hands Rule 2 a one-token objective that authors an
+  entire plan named after a flag. Caught by driving `/plan-agent:build --dir`
+  headless, which did exactly the first of those.
+- **The dirty-tree headless default is now deterministic on `git status
+  --porcelain`.** Every remaining entry `??` → list them and proceed; any
+  tracked file modified, added, renamed, or deleted → report and stop. The
+  previous "only changes are plan artifacts, else stop" wording required a
+  judgment call, and three headless runs against an identical untracked
+  zero-byte file split two-to-one on it — the same undefined-fallback failure
+  this release removes from the discovery gate, surviving at the dirty-tree
+  gate. Stopping on stray logs and editor droppings also halts every headless
+  run in a real repo for nothing.
+
+### Added
+
+- **Resolution test table** (`references/resolve-plan.md`) — eight rows, one per
+  case the ladder must handle, each naming its rest string, the rule it takes,
+  and the outcome. `tests/plugins/test-build-skill.sh` check 21 asserts every
+  row's content and the ladder's `0 → 1 → 2 → 3` ordering, so a reverted rule
+  leaves a row asserting the opposite of the prose above it and the suite goes
+  red. Checks 11, 15, and 18 were rewritten against the new contract, each
+  carrying a negative assertion that fails if the 8.x wording returns.
+
+### Migration
+
+Anything that passed a plan path or ran bare is unaffected. Two behaviours
+change: a multi-word objective whose first word contains a `/` now authors a
+plan instead of stopping, and a plans directory holding exactly one open spec
+now builds it instead of asking. Pass the spec path explicitly to pin which plan
+a bare `build` picks up.
+
+
+## 8.7.0 — red-green-verify plans (2026-08-06)
+
+A plan could name its tests and still be implemented in the wrong order: write
+the feature, then write a test that passes against whatever got built. That
+test proves the implementation matches itself, not the objective. Nothing in
+the spec format forced the failure to come first.
+
+The machinery to fix that already shipped in 8.6.0 — `### Phase:` groupings,
+per-step `Verify:` markers, and `build` stopping at each boundary. This release
+adds the guidance that uses them, so no parser, renderer, or `build` change was
+needed.
+
+### Added
+
+- **`guidelines/red-green-verify.md`** — the RED/GREEN/VERIFY/SHIP phase shape.
+  RED authors executable tests and demands the failure output as the `Verify:`
+  line, failing *for the right reason* (a test that errors on a missing import
+  has not gone red, it has not run). GREEN implements the minimum that passes,
+  re-running after every edit, capped at **8 iterations** — the cap is written
+  into the phase's last step, because a loop with no cap in the spec has
+  nothing to stop it, and the step says report the exact blocker rather than
+  success. VERIFY runs the full suite, lint, and typecheck where the project
+  has one, then — **on UI plans only** — a live browser pass checking layout,
+  touch targets ≥ 44×44px, and zero hydration warnings; a backend or library
+  plan has no affected pages and omits the step. SHIP is entered only when the
+  first three are green **and the user asked to ship**: `build` Step 6 commits
+  only on request, and a SHIP phase that committed unconditionally would
+  override that from inside the plan. Its PR body carries the RED failure
+  output, the GREEN passing run, and the browser assertions as evidence.
+- **UI work asserts on real DOM state, never screenshots.** RED adds a
+  browser-verification step driving the browser MCP tools —
+  `mcp__Claude_Browser__read_page` refs,
+  `mcp__Claude_Browser__javascript_tool` computed styles,
+  `mcp__Claude_Browser__read_console_messages`. Either connected surface
+  works; `mcp__claude-in-chrome__*` exposes the same calls, and this
+  plugin's `prototype` skill and `implementation-plan` Step 7 use that one.
+  A screenshot is evidence for a human; it fails silently for an agent.
+- **The foreground Node driver.** `&` and `nohup` are blocked by permissions,
+  so a step saying "background the dev server, then curl it" cannot run. The
+  guideline ships a driver shape instead: spawn the server as a child, poll
+  until it answers, assert, `kill()` in a `finally`. Its exit code *is* the
+  `Verify:` line.
+- **`--tdd` / `--no-tdd`** — force or suppress the shape, skipping detection.
+
+### Changed
+
+- **Step 2 detects whether a plan requires the shape.** It applies when the
+  steps touch application source *and* Step 0b found a test runner — the same
+  Tier 1 signal Step 5c already classifies on, plus a way to actually run red.
+  Tier 2 doc/plan/metadata work is skipped: there is nothing to fail, and a RED
+  phase over a `grep -q` check is theatre. Genuinely close calls (Tier 1 with
+  no runner, config-only edits, spikes) trigger one `AskUserQuestion` rather
+  than a guess. `--quick` skips Step 0b entirely, so the runner signal was
+  never established there: one cheap check stands in, and no hit means no RGV
+  rather than an inference from nothing. `--tdd` overrides that — it forces the
+  shape even with no runner, and RED's first step then stands the runner up so
+  the added scope is visible in the plan instead of discovered mid-build.
+- **Step 5c** now states that on a red-green-verify plan the `## Tests` bullets
+  name the same files the RED steps author — the section is the catalogue, the
+  phase is the schedule — so the two cannot drift into separate test lists.
+- **`right-sizing.md`** gains a calibration row and a note that phases now have
+  two unrelated uses: context budget (the Phased profile) and discipline (this
+  shape). They cannot share one heading run — `### Phase: Parse` beside
+  `### Phase: RED` leaves a reader unable to tell what a boundary means — so
+  RGV wins the headings and the context seams live inside it. If that makes
+  GREEN too large for one window, the objective was two plans.
+
+
+## 8.6.0 — phase checkpoints and a Decisions ledger (2026-08-05)
+
+A long *sequential* plan — step seven depending on a choice made in step two —
+could not be implemented across more than one context window. `workflow` fans
+out across subagents, which does nothing for a chain that cannot be split, and
+`right-sizing.md` told the author a plan needing more than ten steps "is
+probably two plans — split it" while offering no mechanism to split with. Two
+optional spec sections and a checkpoint loop close that.
+
+### Added
+
+- **`### Phase: <name>` groupings inside `## Steps`.** Each heading groups the
+  run of steps below it; the renderer wraps those step cards in
+  `<div class="phase-group" data-phase="…">` under an `<h3>`. Numbering stays
+  **flat and global** — phases group it, they never restart it — so adding
+  phases to an already in-progress plan keeps every `[x]` marker valid and
+  `build` still resumes at the first unmarked step rather than at a phase start.
+  Carried at all four sites the format is bidirectional across:
+  `parseSpecMarkdown`, `buildDigest`, `extractSections`, and the renderer.
+  A heading with no steps under it is a spec error — it has nothing to anchor
+  to and would vanish on the next round trip.
+- **`## Decisions`** — the settled-choices ledger, one bullet per decision,
+  rendered as a card after Context with its own sidebar nav entry. Distinct
+  from `## Completion Report`, which records gaps rather than choices. This is
+  what a resumed session reads instead of re-deriving — or contradicting — what
+  an earlier context window already decided.
+- **`build` treats each phase boundary as a checkpoint.** It implements one
+  phase, runs that phase's `Verify:` lines, appends what the phase settled to
+  `## Decisions`, re-renders, then offers `Compact and continue` (recommended),
+  `Stop here — resume later`, or `Continue without compacting`. The compact
+  branch **prints** the `/compact` command with focus instructions naming the
+  spec path and the finished phase and then stops — `/compact` is a CLI
+  built-in the user types, not a tool a skill can call. Compaction is safe
+  mid-plan precisely because the durable state (step markers, `status:`, the
+  ledger) lives in the spec rather than in the conversation.
+- **`build --continue`** pushes straight through every boundary. A spec that
+  declares no phases never stops and is unaffected by any of this.
+
+### Changed
+
+- **`finalize-plan` will not complete a checkpointed plan.** A spec carrying
+  phase headings stays `in-progress` while any phase still holds an unmarked
+  step, with each unfinished phase named as a `## Completion Report` bullet and
+  the step-marking pass (5c) skipped. `build` stops at its first boundary by
+  design, so this is the difference between a plan that finished and one that
+  paused.
+- **`right-sizing.md` gains a Phased profile** and no longer sends the author
+  to a mechanism that does not exist. `section-catalog.md` documents both new
+  sections; `implementation-plan/SKILL.md` lists them among what the renderer
+  handles.
+
+### Notes
+
+- **Do not author a phase heading in a plan rendered by plan-agent < 8.6.0.**
+  Older parsers fold a `###` line between two steps into the preceding step's
+  `Verify:` text with no error raised.
+- No new shared CSS. The plan stylesheet is emitted verbatim into every
+  rendered plan, so one new rule would rewrite the bytes of every committed
+  plan; phase and Decisions styling is local to the elements that use it.
+  `tests/plugins/test-plan-phases.mjs` pins an unphased render to a sha256 to
+  keep it that way.
+- Parent/child plan files stay out of scope. Phase boundaries are shaped so
+  they can be extracted into child files later.
+
+
+## 8.5.1 — plans-library delegates to the gallery generator (2026-08-04)
+
+### Fixed
+
+- **`plans-library` no longer counts plans its own way.** The skill hand-executed
+  `find "$PLANS_DIR" -maxdepth 1 -name "*.html"`, a second collection rule
+  alongside the walk in `hooks/build-index.sh`. `-maxdepth 1` does keep
+  `archive/` and `artifacts/` out, but it sees only the top level of the plans
+  directory — so every plan filed in any other subdirectory vanished from the
+  gallery the moment a user ran this skill, after the `rebuild-plans-index.py`
+  PostToolUse hook had already rendered a card for it. Steps 1-5 now delegate to
+  `hooks/build-index.sh`, the script that hook already runs, so there is one
+  implementation and one total. **-159 lines**
+- **Gallery order now matches its own subtitle.** The skill sorted purely
+  newest-first while substituting the subtitle "in flight first, then newest".
+  `build-index.sh` sorts in-progress plans ahead of the rest, so the page and its
+  description finally agree
+- **The delegated command can actually run.** It is invoked as the bare name
+  `plan-agent-plans-index` via the new `bin/` wrapper, not through a plugin-root
+  variable — the Bash tool refuses any command text carrying a shell expansion
+  before permission rules are consulted, so the path spelling would have made the
+  rewritten skill's only action dead on arrival. Check 11b of
+  `tests/plugins/test-extractor-wiring.sh` pins the call site in command position
+
+- **`plans-library` no longer claims it opened a browser it could not open.** The
+  launch step ended in `|| true`, so a headless box — no `open`, no `xdg-open` —
+  still got "opened in your browser". It now reports which happened, and still
+  never fails the skill: the gallery is written and valid either way
+- **`build-index.sh` reports the number of cards it wrote, not the number of files
+  it found.** The card loop skips any plan it cannot open — a broken symlink, a
+  file whose permissions changed between the walk and the read — but the total
+  was taken from the pre-parse file list, so the page's own "N items" line, the
+  topbar Plans tab, and the `wrote … (N items)` line all overstated by exactly
+  the number dropped. Harmless while nothing compared them; now that
+  `plans-library` checks its card count against that number, one unreadable file
+  would have reported the gallery as a corrupt write and refused to open it
+
+### Added
+
+- **`bin/plan-agent-plans-index`** — bare-name entry point for
+  `hooks/build-index.sh`, mirroring the existing `bin/plan-agent-prototypes-index`
+
+
 ## 8.5.0 — typed build entry points (2026-08-03)
 
 ### Added
