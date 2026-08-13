@@ -11,7 +11,7 @@ Automated git workflow for Claude Code — branch creation, commits, PRs, ship p
 - **pr-agent** — Detects the base branch, pushes if needed, checks for an existing PR, and creates one via `gh`. Stops immediately after. Manual invoke only — does not auto-activate on intent match.
 - **ship** — Stages, commits, pushes, and creates a PR in one flow. Manual invoke only — does not auto-activate on intent match. Use commit-agent or pr-agent for individual steps.
 - **ship-autonomous** — Supervised full pipeline: branches (if on default), runs the tests and previews both themes before committing, opens a PR, then subscribes to the PR's activity events to autofix CI failures (lint/typecheck/peer-deps, ≤3 attempts per check) and respond to review comments, posting regular status updates. Asks before any fix outside the safe allowlist, before merging, and again before deleting the branch. Falls back to CI polling when run locally without the GitHub MCP server. Auto-activates on intent match. Use when you want to ship and walk away.
-- **merge** — Checks the current branch's PR for merge readiness (MERGEABLE, `mergeStateStatus` `CLEAN`, `UNSTABLE`, or `HAS_HOOKS`, required checks successful or skipped, no `CHANGES_REQUESTED`), runs the project's lint script, then asks for explicit approval before merging with `gh pr merge --squash --match-head-commit`. Never auto-`--fix`es lint, never passes `--delete-branch`. Anything pending, failing, or ambiguous → prints the status summary and asks. Typing `merge?` triggers it deterministically via the bundled `UserPromptSubmit` hook. Auto-activates on intent match.
+- **merge** — Checks the current branch's PR for merge readiness (MERGEABLE, `mergeStateStatus` `CLEAN`, `UNSTABLE`, or `HAS_HOOKS`, required checks successful or skipped, no `CHANGES_REQUESTED`), then asks for explicit approval before merging with `gh pr merge --squash --match-head-commit`. Never passes `--delete-branch`. Anything pending, failing, or ambiguous → prints the status summary and asks. Typing `merge?` triggers it deterministically via the bundled `UserPromptSubmit` hook. Auto-activates on intent match.
 - **create-issue** — Drafts and creates a GitHub or GitLab issue from any context source — `bug`, `feature`, `selection`, `session`, or `plan` (a plan file becomes a tracked ticket). Auto-detects the git host from the remote URL (`gh` for GitHub, `glab` for GitLab) and always shows a confirmation gate before writing. After creation, opens the issue in the browser (`--no-open` to suppress). Auto-activates on intent match.
 
 ### Subagents (background, fire-and-forget)
@@ -218,6 +218,86 @@ Examples:
 /git-agent:create-issue bug --no-open    # create but skip browser
 ```
 
+## The commit lint gate
+
+`hooks/lint-before-commit.py` is a `PreToolUse` hook on `Bash`. It runs the host
+project's own checks before a `git commit` lands and blocks the commit (exit 2)
+when the commit **introduces** a failure, feeding the new records back so they
+can be fixed without a round-trip.
+
+Escape hatch: create `.claude/no-lint-gate` at the repo root. It overrides
+everything below, including the config file.
+
+### Only new failures block
+
+The gate compares the staged index against `HEAD`. A repo whose `HEAD` already
+fails lint still accepts commits that add no new failures — you are never asked
+to fix 40 errors you did not write before you can commit one line.
+
+Both sides are materialized as throwaway trees from `git archive`, so the
+verdict is pinned to **what is being committed**: unstaged edits neither block a
+commit nor change the result. Comparison is linter-agnostic — output lines are
+path-stripped and digit-masked into a multiset, and a record counts as new only
+when its count rises. That absorbs the line-number shift an edit causes further
+down a file without needing a parser per tool, so a project that wraps its
+linter in a shell script works the same as one that does not.
+
+The host's dependency directories (`node_modules`, `.venv`, `target`, `vendor`,
+and Yarn PnP's `.pnp.cjs`) are symlinked into both trees, since a fresh checkout
+has none and a check that fails for want of a binary would read as "HEAD was
+already broken". One accepted limitation follows: a failure caused purely by a
+dependency change staged in the commit reads as pre-existing.
+
+When a baseline cannot be established — no `git archive`, a timeout, an
+unwritable temp dir — the gate falls back to blocking on the **whole** check
+output and says so. It never degrades to skipping; a silent pass is the one
+failure mode that would make it untrustworthy.
+
+### What it detects
+
+Detection walks up from the commit's directory to the git root and stops at the
+first directory with a matching manifest, so a commit from `packages/api` runs
+that package's check rather than the repository root's. The git root is a hard
+ceiling — the walk never escapes into a parent project.
+
+| Manifest | Check |
+|----------|-------|
+| `package.json` | `scripts.lint`, then `scripts.typecheck`, via the lockfile's runner (npm, pnpm, yarn, bun) |
+| `pyproject.toml` | `ruff check .`, falling back to `flake8` — found in the project's `.venv`/`venv` as well as on `PATH` |
+| `go.mod` | `go vet ./...` |
+| `Cargo.toml` | `cargo clippy --quiet` |
+
+`package.json` wins where a directory carries more than one. A check that cannot
+run is never a block: missing dependencies, a linter absent from `PATH`, exit
+127, no manifest, and an exhausted time budget are all silent no-ops.
+
+An unborn branch is the one case that does block. With no `HEAD` there is
+nothing to compare against, so every failure is new by definition and the gate
+falls back to blocking on the whole check output — your first commit is gated.
+
+### Overriding detection
+
+Name your own commands in `.claude/lint-gate.json` at the repo root. When the
+file is present it **replaces** built-in detection outright rather than adding
+to it:
+
+```json
+{ "commands": ["make lint", "make typecheck"] }
+```
+
+Commands run in a shell at the repo root. A malformed file disables the gate
+rather than silently falling back to the detection it was meant to replace.
+
+The config is read from the **staged** version when it differs from disk, as
+`package.json` is — which files decide the verdict is the same lever as their
+contents, so an unstaged edit must not be able to switch the gate off for a
+commit whose staged version still enables it. `.claude/no-lint-gate` is
+deliberately the exception: it is a local escape hatch and is always read from
+the working tree, so you can disable the gate without committing anything.
+
+All checks share one deadline, so a config naming more commands than the two
+built-in scripts still cannot outlast the hook timeout.
+
 ## Background subagents
 
 The skills above run synchronously in the foreground — your session waits for them to complete. The agents in `agents/` are background subagents that run independently while you keep working.
@@ -254,7 +334,7 @@ Mirrors `ship`: guards → stage → commit → push → check for existing PR/M
 
 Dispatched via `/git-agent:merge-bg [pr]` or directly by an orchestrator. The optional argument names the PR to act on and wins over the checked-out branch; only without it is the PR resolved from the current branch.
 
-Mirrors `merge` Steps 1–4: find the PR → readiness gate (`--required` checks, `mergeable`, `mergeStateStatus`, `reviewDecision`) → lint gate → re-check → `gh pr merge --squash --match-head-commit`. The skill's `AskUserQuestion` approval has no background equivalent, so the dispatch itself authorizes exactly one squash merge of a fully green PR; every other branch is a stop-and-report. The lint gate runs only when the working tree is clean and `HEAD` matches the PR's `headRefOid` — otherwise it is skipped and reported as skipped, since lint passing on uncommitted local edits says nothing about the commit being merged. Never passes `--delete-branch`.
+Mirrors `merge` Steps 1–3: find the PR → readiness gate (`--required` checks, `mergeable`, `mergeStateStatus`, `reviewDecision`) → re-check → `gh pr merge --squash --match-head-commit`. The skill's `AskUserQuestion` approval has no background equivalent, so the dispatch itself authorizes exactly one squash merge of a fully green PR; every other branch is a stop-and-report. Never passes `--delete-branch`.
 
 ### Caveat: working-tree snapshot
 
@@ -293,9 +373,10 @@ plugins/git-agent/
 │   ├── agent-commit.md
 │   ├── agent-pr.md
 │   └── agent-ship.md
-├── hooks.json                    # UserPromptSubmit wiring for the merge? shorthand
+├── hooks.json                    # Hook wiring; declared by plugin.json's "hooks" key
 ├── hooks/
-│   └── merge-shorthand.py        # Routes the literal prompt `merge?` to skills/merge
+│   ├── merge-shorthand.py        # Routes the literal prompt `merge?` to skills/merge
+│   └── lint-before-commit.py     # Blocks a commit that introduces a lint failure
 ├── commands/
 │   ├── commit-bg.md
 │   ├── merge-bg.md
