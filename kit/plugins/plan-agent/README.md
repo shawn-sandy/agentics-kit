@@ -24,6 +24,7 @@ Installers get on-demand planning with argument support, issue ingestion, built-
 | `build-proposal` | Skill | Command (`/plan-agent:build-proposal <idea>`) or auto-activates on idea / "should-we" / compare-and-align intent — converges on a saved prompt at `docs/prompts/proposal-<slug>.md` |
 | `build-feature` | Skill | Command (`/plan-agent:build-feature <feature idea>`) or auto-activates on feature-doc / break-into-plans intent — converges on a feature doc at `docs/features/<slug>.md` plus per-sub-feature prompts at `docs/prompts/feature-<slug>-<sub-slug>.md` |
 | `build` | Skill | Command (`/plan-agent:build [<plan>] [<objective>] [--type <kind>]`) or auto-activates on "implement / build this plan" intent — implements a plan and runs its gates; with no plan named, the command form authors one first through proposal → plan → review |
+| `build-fleet` | Skill | Command (`/plan-agent:build-fleet [<plan> ...] [--max N]`) or auto-activates on "implement the backlog in parallel" intent — one worktree subagent per `todo` plan, each running `build` → `ship-autonomous` to a green PR |
 | `fix` | Command | Typed entry point — `/plan-agent:fix <objective>` runs the `build` chain with `--type fix` |
 | `refactor` | Command | Typed entry point — `/plan-agent:refactor <objective>` runs the `build` chain with `--type refactor` |
 | `review-plan` | Skill | Manual only — invoke as `/plan-agent:review-plan [plan-path]` or auto-activates when you ask to review a plan (requires Agent Teams) |
@@ -590,6 +591,27 @@ Command-invocable via `/plan-agent:implementation-plan <objective>` and model-in
 - **Markdown-spec pipeline** — the agent authors a compact Markdown plan spec (the committed source of truth) and renders it deterministically with the bundled `plan-agent-render` (a `bin/` wrapper around `scripts/build-plan-html.mjs`); the renderer owns all presentation (CSS, JS, meta tags, derived implement/goal/workflow prompts, effort level, file-tree) *and* all progress state: `- [x]` criteria bullets, `[x]` step markers, and an optional `## Completion Report` section render as checked boxes, completed step cards, the derived completion checklist, and the report list — status/checkbox changes are Markdown edits plus a re-render, never HTML surgery
 - **Guidelines library** — `guidelines/planning-principles.md`, `section-catalog.md`, `right-sizing.md`, `red-green-verify.md`, and `writing-style.md` drive judgment-based structure: the required core (objective, steps, acceptance criteria, verification) is always present, everything else earns its place per plan (`minimal`/`adr`/`spike` ship as right-sizing guidance, not extra templates)
 - **Spec starter** — `reference/SKELETON.md` is the copyable spec skeleton in the exact format the renderer parses
+- **`--check` (verify, write nothing)** — `plan-agent-render "<stem>.md" -o "<stem>.html" --check` proves the rendered HTML is current and that a finished spec is internally consistent, without inspecting the rendered markup:
+
+  ```bash
+  plan-agent-render docs/plans/my-plan.md -o docs/plans/my-plan.html --check
+  ```
+
+  | Row | Asserts | Skipped when |
+  |-----|---------|--------------|
+  | `html` | the file on disk is byte-identical to a fresh in-memory render | never |
+  | `steps` | every numbered step carries `[x]` | `status:` is not `completed` |
+  | `criteria` | every `## Acceptance Criteria` bullet is `- [x]` | `status:` is not `completed` |
+
+  Rows always print in that order. Exit is 0 only when nothing fails; a stale
+  `html` row names the first differing line, column, and a 40-character window
+  of each side, and a missing HTML file names the render command that produces
+  it rather than throwing. A failure is always fixed in the **spec** — re-render
+  rather than editing the HTML, and never promote `status:` to satisfy it.
+  Run by `build` Step 5.3 and `finalize-plan` Step 5e; it replaced a gate that
+  named CSS selectors as evidence and was reached with `Grep`, which searches
+  source markup instead of evaluating anything and reported drift that was not
+  there.
 
 ### `build` Skill
 
@@ -620,6 +642,46 @@ when no plan was named.
   `status: completed` is written only after end-to-end verification passes
 - **Handoff** — stops without committing; the source changes, updated spec, and
   re-rendered HTML are left in the working tree
+
+### `build-fleet` Skill
+
+Command-invocable via `/plan-agent:build-fleet [<plan> ...]` and model-invocable
+on "ship the backlog in parallel" intent. It is `build` fanned out: `build`
+ships one plan on the current branch, `build-fleet` ships N plans on N branches.
+
+It **dispatches only**. Every step of the work belongs to `plan-agent:build` and
+`git-agent:ship-autonomous`, so both are inherited rather than restated —
+including the completion gates, the browser verification, the CI autofix, and
+the review triage.
+
+- **Candidates** — non-flag arguments are an explicit plan list; with none, it
+  discovers every `status: todo` spec under the plans directory, skipping
+  `archive/` and `artifacts/`. Only frontmatter is read here; the fleet agents
+  read the bodies
+- **Picker** — a single `multiSelect` `AskUserQuestion` over the newest four
+  candidates, stating how many were suppressed. The ticked boxes *are* the
+  confirmation, since the question says each selection opens one pull request;
+  an explicit plan list skips the picker, and an empty selection, a dismissed
+  question, or a headless run all cancel
+- **Base branch** — resolved from `refs/remotes/origin/HEAD` in Step 1 and
+  carried into every agent prompt, never assumed to be `main`; an unset
+  `origin/HEAD` asks rather than guessing
+- **Isolation** — one `Agent` per plan with `isolation: "worktree"`, so the
+  harness creates each worktree and removes it if left unchanged. No
+  `git worktree add`, no cleanup pass
+- **Blast-radius guards** — a mandatory confirmation naming the number of PRs
+  that will open, `--max` defaulting to 3, `completed` plans excluded even when
+  named, and a headless run that cancels rather than defaulting
+- **Stops at green** — a background agent cannot answer `ship-autonomous`'s
+  merge gate, so the fleet ends at green PRs and merging stays a human step via
+  `/git-agent:merge`. The repo's `marketplace.json` and gallery `index.html`
+  merge drivers already resolve the conflicts sibling PRs actually produce
+
+```bash
+/plan-agent:build-fleet                    # every todo plan, max 3
+/plan-agent:build-fleet --max 5
+/plan-agent:build-fleet docs/plans/add-foo.md docs/plans/add-bar.md
+```
 
 ### `build-proposal` Skill
 

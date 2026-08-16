@@ -13,6 +13,7 @@ Automated git workflow for Claude Code — branch creation, commits, PRs, ship p
 - **ship-autonomous** — Supervised full pipeline: branches (if on default), runs the tests and previews both themes before committing, opens a PR, then subscribes to the PR's activity events to autofix CI failures (lint/typecheck/peer-deps, ≤3 attempts per check) and respond to review comments, posting regular status updates. Asks before any fix outside the safe allowlist, before merging, and again before deleting the branch. Falls back to CI polling when run locally without the GitHub MCP server. Auto-activates on intent match. Use when you want to ship and walk away.
 - **merge** — Checks the current branch's PR for merge readiness (MERGEABLE, `mergeStateStatus` `CLEAN`, `UNSTABLE`, or `HAS_HOOKS`, required checks successful or skipped, no `CHANGES_REQUESTED`), then asks for explicit approval before merging with `gh pr merge --squash --match-head-commit`. Never passes `--delete-branch`. Anything pending, failing, or ambiguous → prints the status summary and asks. Typing `merge?` triggers it deterministically via the bundled `UserPromptSubmit` hook. Auto-activates on intent match.
 - **create-issue** — Drafts and creates a GitHub or GitLab issue from any context source — `bug`, `feature`, `selection`, `session`, or `plan` (a plan file becomes a tracked ticket). Auto-detects the git host from the remote URL (`gh` for GitHub, `glab` for GitLab) and always shows a confirmation gate before writing. After creation, opens the issue in the browser (`--no-open` to suppress). Auto-activates on intent match.
+- **post-merge-cleanup** — Removes a merged branch and its worktree, but inspects the worktree first and stops with the file list whenever `git status --porcelain` is non-empty — untracked, staged, or unstaged alike. Never passes `--force`. Finds squash-merged branches that commit ancestry cannot see by also checking for a merged PR, and uses `-D` only where that PR is positive evidence. Takes an explicit `<branch>` or `<worktree-path>` target, `--all` for a repo-wide sweep, and `--dirs` for unregistered leftover directories that `git worktree prune` cannot reach. Auto-activates on intent match.
 
 ### Subagents (background, fire-and-forget)
 
@@ -62,6 +63,7 @@ claude --plugin-dir ./kit/plugins/git-agent
 | `ship-autonomous` | Auto-activated | "ship it autonomously", "ship and watch the PR", "ship and fix what breaks", "ship and autofix CI failures" |
 | `merge` | Auto-activated — or type the `merge?` shorthand (hook-routed) | "merge?", "is this ready to merge", "merge the PR if it's green" |
 | `create-issue` | Auto-activated | "file a bug", "open an issue", "create a feature ticket", "log this as an issue" |
+| `post-merge-cleanup` | Auto-activated — accepts an explicit `<branch>` or `<worktree-path>` target, plus `--all` / `--dirs` | "clean up merged branches", "remove this worktree", "delete the branch now it's merged", "clear out old worktrees" |
 
 ### Agents
 
@@ -130,7 +132,7 @@ The skill will:
 2. Detect base branch via `git symbolic-ref`, fall back to `main`/`master`
 3. Check for existing PR (stops if one exists)
 4. Push branch if no upstream tracking ref
-5. Run `gh pr create` and output the PR URL
+5. Run `gh pr create` and output the PR URL — if the invoking skill reported a verification marker (such as `UNVERIFIED — no browser`), it is reproduced verbatim in the body's Test Plan; with no marker reported the template is unchanged
 
 **STOPS after PR creation. Does not analyze code, run tests, or take further action.**
 
@@ -139,7 +141,7 @@ The skill will:
 **Manual invoke only** — does not respond to natural-language intent matching. Invoke explicitly with `/git-agent:ship` or dispatch via `/git-agent:ship-bg` for background operation.
 
 The skill will:
-1. Guard: check for clean tree, detached HEAD, default branch, `gh` auth
+1. Pre-flight: run **all five** guards — clean tree, detached HEAD, default branch, CLI auth, worktree env parity — then print **one** PASS/BLOCKED table with a remediation command per blocker. It does not stop at the first failure, so three blockers cost one invocation instead of three. Any BLOCKED row halts before any mutation
 2. Run `git add -A` and analyze `git diff --staged`
 3. Write a conventional commit message and run `git commit`
 4. Push the branch (with `-u` if no upstream)
@@ -149,6 +151,27 @@ The skill will:
 **STOPS after PR creation (or after pushing to an existing PR). Does not analyze code, run tests, or take further action.**
 
 Use `commit-agent` or `pr-agent` if you only need one step.
+
+#### The pre-flight table
+
+Both `ship` and `ship-autonomous` run every guard before reporting any of them, then print a single table:
+
+| Guard | Status | Remediation |
+|---|---|---|
+| Clean working tree | PASS | — |
+| Detached HEAD | PASS | — |
+| CLI auth | BLOCKED | `gh auth login` |
+| Worktree env parity | BLOCKED | `cp /path/to/main/.env /path/to/worktree/.env` |
+
+`PASS` is satisfied, `BLOCKED` is a blocker with a paste-ready remediation command, and `FAIL` means the guard could not run at all (treated as BLOCKED — a guard that cannot answer has cleared nothing). Any BLOCKED row stops the run before anything is staged, committed, or pushed.
+
+**Nothing is remediated automatically.** No re-auth, no `git stash`, no copying an env file. Re-auth is an interactive browser flow that cannot succeed unattended, and a silent stash or env copy would move your own data without asking. The Remediation column is text for you to run.
+
+#### Worktree env parity
+
+Gitignored `.env*` files do not travel with `git worktree add`, so a linked worktree starts without them — and the resulting failure looks like a bug in whatever you edited last rather than a missing file. This guard is **skipped entirely outside a linked worktree** (detected by comparing `git rev-parse --git-dir` against `--git-common-dir`). Inside one, it lists the gitignored env files the main checkout has that this worktree lacks, and prints the exact `cp` for each.
+
+It never copies the file. These hold secrets, so the copy stays your decision.
 
 ### ship-autonomous
 
@@ -160,14 +183,14 @@ Auto-activates when you say any of:
 
 The skill will:
 1. Exit plan mode (Step 0) — no-op when already off
-2. Guard: check for clean tree, uncommitted plan files, detached HEAD, `gh` auth
+2. Pre-flight: run **every** guard — clean tree, uncommitted plan files, detached HEAD, `gh` auth, worktree env parity, browser availability — and report them in one table (see [The pre-flight table](#the-pre-flight-table)). Headless, each gate takes its named default; the uncommitted-plan-files gate defaults to `abort`
 3. Branch: if on the default branch, auto-generate and create a feature branch via `branch-agent`; otherwise continue on current branch
-4. Verify (Step 2.5): run the project's `test*` script and **stop on failure** rather than committing a red tree; when the change is observable in a browser, preview it via `.claude/launch.json`, check console/server logs, and screenshot both light and dark themes. Skipped entirely when there's nothing a dev server could prove
+4. Verify (Step 2.5): run the project's `test*` script and **stop on failure** rather than committing a red tree; when the change is observable in a browser, preview it via `.claude/launch.json`, check console/server logs, and screenshot both light and dark themes. Skipped entirely when there's nothing a dev server could prove. When the browser MCP is unavailable the step is **not** silently skipped — it reports `UNVERIFIED — no browser`, which `pr-agent` reproduces verbatim in the PR body's Test Plan so a reviewer sees that the check did not happen
 5. Commit via `commit-agent` (stages, conventional message, commits)
 6. Open PR via `pr-agent` (pushes, checks for existing PR, creates one)
 7. Subscribe to the PR's activity events via `subscribe_pr_activity`, post an initial status update, and **end the turn** — CI failures and review comments then arrive as events that wake the session
 8. On each event: refresh a live TodoWrite status checklist and post a concise update, then
-   - **CI failure** → classify and autofix allow-listed classes (`lint`, `typecheck`, `peer-deps`), ≤3 attempts per check; commit + push the fix (which triggers the next CI run)
+   - **CI failure** → classify first. An **`external-blocker`** (billing or quota block, expired credentials, revoked permission, workflow awaiting approval, or a run whose jobs all failed producing no log output at all) is reported verbatim and **never autofixed** — a failing check is not a code defect until proven one, and fixing infrastructure as code changes correct code. It does not advance the attempt cap. Otherwise autofix the allow-listed classes (`lint`, `typecheck`, `peer-deps`), ≤3 attempts per check; commit + push the fix (which triggers the next CI run)
    - **Review comment** → apply clear, in-scope changes (commit, push, reply); ask first if ambiguous or architectural
    - **Anything outside the safe allowlist, or ambiguous** → ask via `AskUserQuestion` instead of guessing
 9. When all checks are green: marks the PR ready, posts "CI is green — ready for review.", and sends a final status update with the PR URL. Keeps watching for later review comments until the PR merges/closes or you say stop (then unsubscribes)
@@ -288,6 +311,19 @@ to it:
 Commands run in a shell at the repo root. A malformed file disables the gate
 rather than silently falling back to the detection it was meant to replace.
 
+Nothing restricts these to linters. Naming a test command makes this a test
+gate as well, so a defect is caught at the commit rather than by CI or a review
+bot two round-trips later:
+
+```json
+{ "commands": ["npm run lint", "npm test"] }
+```
+
+That is safe on a suite that is already red: every command is compared against
+`HEAD` the same way, so a test failing before your change never blocks the
+commit — only one your change introduces does. Keep the whole set inside the
+hook's time budget; a suite that cannot finish is a silent no-op, not a block.
+
 The config is read from the **staged** version when it differs from disk, as
 `package.json` is — which files decide the verdict is the same lever as their
 contents, so an unstaged edit must not be able to switch the gate off for a
@@ -297,6 +333,53 @@ the working tree, so you can disable the gate without committing anything.
 
 All checks share one deadline, so a config naming more commands than the two
 built-in scripts still cannot outlast the hook timeout.
+
+## The scope guard
+
+`hooks/scope-guard.py` is a second `PreToolUse` hook on `Bash`, sharing the
+matcher with the lint gate. It refuses two commands whose blast radius exceeds
+their intent — each one has a recorded incident behind it, and nothing else is
+blocked.
+
+| Blocked | Passes |
+|---------|--------|
+| A formatter or linter run with `--write`/`--fix` and either no path operand or `.` — `prettier --write .`, `eslint --fix`, `biome format --write .` | Any explicit path — `prettier --write src/app.ts`, `npx prettier --write kit/`, `prettier --write ./src`. A `--check`-only run. |
+| `git stash pop` / `git stash apply` with no stash reference | `git stash pop stash@{2}`, `git stash apply 1`, `git stash list`, `git stash push` |
+
+The first rule resolves package scripts before matching. `npm run fix:all`
+carries none of the dangerous text itself — its expansion lives in
+`package.json` — so a runner invocation is resolved against the nearest
+manifest, walking up from the command's directory to the git root, and the
+script's *body* is what the rule sees. An optional `run` token is stripped
+rather than required, so all eight spellings (`npm`/`pnpm`/`yarn`/`bun`, each
+with and without `run`) behave identically, and a script that delegates to
+another script resolves through up to three hops. A missing manifest,
+unreadable JSON, or absent script resolves to nothing and never blocks.
+
+A mention is not an invocation. The guard parses the command and checks the
+program actually being run, so a blocked pattern quoted inside a
+`git commit -m` message, an `echo`, or a `grep` argument is not blocked —
+`git` is admitted only for `git stash`. Nothing touches the filesystem until a
+command is a genuine candidate, which matters because this hook runs on every
+`Bash` call in every repo that installs git-agent.
+
+`rm`, `curl`, `git reset --hard`, and `git checkout -- .` are deliberately out
+of scope. A guard that fires on safe commands gets switched off, which costs
+more than the two patterns it was catching.
+
+Blocks exit 2 with the rule and its safe alternative on stderr, so the message
+comes back as something to act on rather than a bare failure.
+
+Escape hatch: create `.claude/no-scope-guard` at the repo root. It disables
+both rules, mirroring `.claude/no-lint-gate`.
+
+### It does not run in the desktop app
+
+Plugin `hooks.json` files are not registered in Claude Code desktop sessions.
+This guard is CLI-only enforcement, so a desktop session is not a test surface
+— a command sailing through there proves nothing about the hook. Keep the
+equivalent rules in `CLAUDE.md` as the desktop fallback rather than retiring
+them when this ships.
 
 ## Background subagents
 
@@ -334,7 +417,7 @@ Mirrors `ship`: guards → stage → commit → push → check for existing PR/M
 
 Dispatched via `/git-agent:merge-bg [pr]` or directly by an orchestrator. The optional argument names the PR to act on and wins over the checked-out branch; only without it is the PR resolved from the current branch.
 
-Mirrors `merge` Steps 1–3: find the PR → readiness gate (`--required` checks, `mergeable`, `mergeStateStatus`, `reviewDecision`) → re-check → `gh pr merge --squash --match-head-commit`. The skill's `AskUserQuestion` approval has no background equivalent, so the dispatch itself authorizes exactly one squash merge of a fully green PR; every other branch is a stop-and-report. Never passes `--delete-branch`.
+Mirrors `merge` Steps 0.5–3: guards → find the PR → readiness gate (`--required` checks, `mergeable`, `mergeStateStatus`, `reviewDecision`) → re-check → `gh pr merge --squash --match-head-commit`. The skill's `AskUserQuestion` approval has no background equivalent, so the dispatch itself authorizes exactly one squash merge of a fully green PR; every other branch is a stop-and-report. Never passes `--delete-branch`.
 
 ### Caveat: working-tree snapshot
 
@@ -376,7 +459,8 @@ plugins/git-agent/
 ├── hooks.json                    # Hook wiring; declared by plugin.json's "hooks" key
 ├── hooks/
 │   ├── merge-shorthand.py        # Routes the literal prompt `merge?` to skills/merge
-│   └── lint-before-commit.py     # Blocks a commit that introduces a lint failure
+│   ├── lint-before-commit.py     # Blocks a commit that introduces a lint failure
+│   └── scope-guard.py            # Blocks repo-wide formatters and index-less stash pops
 ├── commands/
 │   ├── commit-bg.md
 │   ├── merge-bg.md

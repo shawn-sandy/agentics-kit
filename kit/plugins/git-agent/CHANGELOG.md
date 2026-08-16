@@ -1,5 +1,264 @@
 # Changelog — git-agent
 
+## v4.19.0 — 2026-08-15 — post-merge cleanup that looks before it deletes
+
+### Added
+
+- **`skills/post-merge-cleanup/`, a skill for clearing merged branches and their
+  worktrees.** It inspects each worktree for uncommitted work *before* removing
+  anything, and stops with the file list when `git status --porcelain` is
+  non-empty for any reason — untracked, staged, or unstaged. The ordering is the
+  point: an unforced `git worktree remove` already refuses a dirty tree, so
+  checking first lets the skill delegate its central safety property to git
+  instead of reimplementing it. Four absolutes back that up: never
+  `worktree remove --force`, never remove a dirty worktree, never `branch -D`
+  without a confirmed merged PR, never `rm` outside the worktrees root.
+- **Dual-signal selection, because commit ancestry is not enough.** This project
+  squash-merges, and a squash merge replays a branch's changes as one commit
+  with a new SHA — so the branch's own commits never become ancestors of the
+  default branch and `git branch --merged` cannot see it by construction.
+  Measured on this repo: 84 branches are ancestry-merged, while 318 have a
+  merged pull request, 296 of them invisible to the ancestry test. The union is
+  380 cleanable branches, so ancestry alone would have found 84 of 380 and
+  missed 78% of the backlog. A branch qualifies when either signal fires, and
+  the qualifying signal decides the flag — `-d` for ancestry, `-D` only where a
+  merged PR supplies positive evidence, since `-d` applies the same ancestry
+  test and would refuse those 296.
+- **Repo-wide sweep behind `--all`, with the report before the question.** One
+  approval spanning hundreds of branches is a gate that gets clicked through, so
+  the inventory table prints first — branch, qualifying signal, worktree, dirty
+  count, action — and batch approval is a separate deliberate answer that names
+  its count, never the default option. Blocked worktrees are listed with their
+  file lists rather than silently skipped.
+- **Unregistered-directory detection, covering a gap `git worktree prune` cannot
+  reach.** Prune scans the admin directories under `.git/worktrees/`; a
+  directory whose admin entry is already gone is invisible to it. Three
+  directories on this repo (~7.3M) sit in exactly that state. Because their
+  dangling `.git` files mean `git status` cannot vouch for the contents, the
+  skill prints size, file count, and recently modified files, then requires a
+  per-directory confirmation and a `pwd -P` containment check before any
+  removal — and prints the command rather than acting when `rm` is denied by
+  policy.
+- **An explicit `<branch>` or `<worktree-path>` target, alongside `--all` and
+  `--dirs`.** Without it the self-deletion refusal was a dead end: the flow
+  defaulted to the current branch, refused because the cwd sat inside the target
+  worktree, and told the user to `cd` out — after which the current branch was no
+  longer the target and a bare re-invocation would resolve to something else. The
+  refusal now prints a resumable command naming the target, and a target that
+  resolves to neither a branch nor a worktree is an error rather than a silent
+  fallback to the current branch.
+- **`tests/plugins/test-post-merge-cleanup.sh`, wired into CI.** Builds a real
+  throwaway repo and asserts the objective directly: a dirty worktree survives
+  with its file byte-identical, while a clean one is still removed, so the gate
+  is proven to block dirty trees specifically rather than blocking everything.
+  The forbidden-flag checks scan fenced code blocks only — the safety contract
+  has to name `--force` in order to forbid it, so a naive whole-file grep would
+  fail on a correctly written skill. Prose is a mention; a code block is an
+  invocation.
+
+## v4.18.0 — 2026-08-14 — a scope guard for repo-wide formatters and bare stash pops
+
+### Added
+
+- **`hooks/scope-guard.py`, a second `PreToolUse` hook on `Bash`.** It refuses
+  two commands whose blast radius exceeds their intent, each with a recorded
+  incident behind it: a formatter or linter run with `--write`/`--fix` and
+  either no path operand or `.` (one such run reformatted ~190 untouched files
+  and needed a guarded revert), and `git stash pop`/`git stash apply` with no
+  stash reference (one bare pop restored an unrelated stash and created
+  conflicts needing recovery). Blocks exit 2 with the rule and its safe
+  alternative on stderr. Escape hatch: `.claude/no-scope-guard` at the repo
+  root, mirroring `.claude/no-lint-gate`.
+- **Package scripts are resolved before matching.** `npm run fix:all` carries
+  none of the dangerous text itself — its expansion lives in `package.json` —
+  so a runner invocation is resolved against the nearest manifest, walking up
+  from the command's directory to the git root, and the script's body is what
+  the rule sees. An optional `run` token is stripped rather than required, so
+  all eight spellings (`npm`/`pnpm`/`yarn`/`bun`, each with and without `run`)
+  behave identically; a script delegating to another script resolves through up
+  to three hops. A missing manifest, malformed JSON, or absent script resolves
+  to nothing and never blocks.
+- **A mention is not an invocation.** The guard parses the command and checks
+  the program actually being run, so a blocked pattern quoted inside a
+  `git commit -m` message, an `echo`, or a `grep` argument is not blocked, and
+  `git` is admitted only for `git stash`. Nothing touches the filesystem until
+  a command is a genuine candidate — this hook runs on every `Bash` call in
+  every repo that installs git-agent. `rm`, `curl`, `git reset --hard`, and
+  `git checkout -- .` are deliberately out of scope: a guard that fires on safe
+  commands gets switched off, which costs more than the two it was catching.
+- **`tests/plugins/test-scope-guard.sh`** — 79 assertions covering both blocked
+  patterns, each pattern's passing counterpart, all eight runner spellings in
+  both directions, the manifest walk (nearest wins, git root is the ceiling,
+  malformed never blocks), the opt-out, and the fast bail. Disabling either
+  rule turns exactly its own checks red and leaves the other rule green.
+
+### Changed
+
+- **The lint gate's `.claude/lint-gate.json` is documented as a test gate.** It
+  already accepted arbitrary commands and already compares every one against
+  `HEAD`, so `{"commands": ["npm run lint", "npm test"]}` is safe on a suite
+  that is already red — only a failure your change introduces blocks. The
+  capability existed and was documented only as a lint mechanism; this adds the
+  example. No behaviour change.
+- README documents both scope-guard rules, the `.claude/no-scope-guard` opt-out,
+  and the caveat that plugin `hooks.json` files are **not** registered in Claude
+  Code desktop sessions — this guard is CLI-only enforcement, so a desktop
+  session is not a test surface and the equivalent `CLAUDE.md` rules stay as the
+  desktop fallback.
+
+### Note on the version number
+
+Released as **4.18.0**, skipping 4.17.0. `harden-ship-preflight` was shipping
+concurrently from a sibling branch and took 4.17.0, which landed as PR #555
+while this work was in progress — `origin/main` read 4.16.1 when the number was
+chosen. Both branches taking 4.17.0 would have left whichever merged second
+failing `scripts/check-plugin-versions.mjs`, which requires the touched
+plugin's version to *exceed* the base branch. 4.18.0 exceeds it in either merge
+order.
+
+## v4.17.0 — 2026-08-14 — pre-flight reports every blocker at once
+
+### Added
+
+- **Pre-flight runs every guard, then reports once.** `ship` Step 1 and
+  `ship-autonomous`'s `preflight-and-verify.md` both stopped at the first
+  failing guard, so a session with an unauthenticated `gh`, a dirty tree, and a
+  worktree missing its `.env` cost three separate spin-ups — fix one, re-invoke,
+  discover the next. Both now run every guard against the unmutated tree and
+  print one PASS/BLOCKED table with a verbatim remediation command per BLOCKED
+  row. **The halt is unchanged**: any BLOCKED row still stops the skill before
+  any mutation. It just stops knowing all of them.
+- **A worktree env-parity guard.** Gitignored `.env*` files do not travel with
+  `git worktree add`, so every linked worktree starts without them and the
+  failure presents as a code defect in whatever was edited last — the cause
+  behind two recorded phantom bugs (a Clerk sign-in regression blamed on a CSS
+  change, and an earlier "missing nav button"). The guard is skipped entirely
+  unless `git rev-parse --git-dir` differs from `--git-common-dir`, then reports
+  each missing file with its exact `cp` command. **It never copies the file** —
+  these hold secrets, so detection is the deliverable and copying stays the
+  user's action.
+- **A browser-availability probe, and an honest marker when it fails.**
+  Step 2.5's browser block had no probe, so an absent MCP silently skipped
+  verification while the PR body still read as verified. It now states
+  `UNVERIFIED — no browser` in the session output and carries that exact string
+  to `pr-agent`, whose Step 5 body template reproduces it verbatim in the Test
+  Plan — adopting the convention `wcag-compliance-reviewer` settled in 1.5.2.
+  The marker had to reach `pr-agent` to reach a reviewer at all; a commit
+  trailer nobody reads would not have.
+- **An `external-blocker` class in CI triage**, ordered ahead of `lint` so it is
+  classified before the classes that assume a code defect. Covers billing and
+  quota blocks, expired credentials, revoked permissions, and workflows awaiting
+  approval. It is reported verbatim, never autofixed, and **does not advance the
+  three-attempt cap** — the cap bounds guessing at code fixes, and nothing is
+  attempted here.
+- **Empty-log detection for the billing case**, where no signature string
+  exists to match: `gh run view <run-id> --json jobs`, classified as
+  `external-blocker` when the jobs array is empty (or every job failed) and
+  `--log-failed` returns nothing.
+
+  Measured on `shawn-sandy/agentics`, 2026-08-14, last 300 runs. The four
+  blocked runs — `31703518612`, `31638004638`, `31624323167`, `31307691925`,
+  all conclusion `action_required` — returned **0 bytes** from `--log-failed`,
+  an **empty `jobs` array**, and `createdAt == updatedAt` (**0 s** elapsed). The
+  eight genuine failures in the same window ran **6–22 s** and returned
+  **2,218–40,948 bytes**. So duration alone does not discriminate on this repo:
+  real code failures also finish well under a minute. The load-bearing clause is
+  the **empty log**; a sub-minute duration is corroboration only.
+
+- **A named headless default for every pre-flight `AskUserQuestion`.** The
+  uncommitted-plan-files gate defaults to `abort` — under `claude -p` the tool
+  is unavailable, and staging or stashing the user's plan files unasked is
+  precisely what that gate exists to prevent.
+- `tests/plugins/test-ship-preflight.sh` — content assertions across both
+  pre-flight surfaces, `pr-agent`'s body template, and the CI table.
+
+### Changed
+
+- `ship` Step 1's guard commands moved to a new bundled
+  `skills/ship/references/preflight-guards.md`, keeping the core under its
+  600-word ceiling. The guard statements themselves stay in SKILL.md. `ship` and
+  `ship-autonomous` still carry separate copies of the pre-flight definition —
+  a skill can only bundle files under its own directory — and both files say so.
+
+### Explicitly not changed
+
+- **No automatic re-auth, stash, or env-file copy.** Re-auth is an interactive
+  browser flow that cannot succeed unattended, and the standing rule is to
+  report blockers verbatim rather than guess at a workaround. Only the
+  round-trip count changed.
+- **`commit-agent` keeps its single-`-m` commit.** It has no commit body to
+  write a verification marker into, and giving it one is a behaviour change
+  affecting several callers.
+
+## v4.16.1 — 2026-08-14 — two over-reaches in 4.16.0 / 4.15.1
+
+### Fixed
+
+- **A failed reproduction no longer counts as a refutation.** v4.16.0 sent any
+  finding that would not reproduce straight to the refuted branch, which
+  resolves the thread and lets the merge proceed. But real defects routinely
+  will not execute in the shipping environment — a missing dependency or
+  credential, production-only configuration, a destructive input, a race that
+  does not fire on this machine, or a defect provable from a schema without
+  running anything. That turned "I could not run it" into "it is incorrect",
+  the exact failure the step was added to prevent. A failed reproduction is now
+  **inconclusive** and routes on the source of truth: refuted only if
+  inspection shows the finding is wrong, blocking if inspection confirms it,
+  otherwise `AskUserQuestion` without resolving the thread.
+- **The detached-HEAD guard no longer fires when a PR was named explicitly.**
+  v4.15.1 pointed `agent-merge` at Steps 0.5–3 wholesale, importing a hard stop
+  that contradicts the agent's own contract that a dispatched PR wins over the
+  checkout. With an explicit URL or number nothing reads the current branch, so
+  the checkout state is irrelevant — the guard exists only to stop Step 1's
+  `gh pr list --head "$(git branch --show-current)"` fallback matching nothing
+  on an empty value. Now scoped to the infer-from-branch path in both
+  `merge/SKILL.md` and `agent-merge`. `gh auth status` and the dirty-tree check
+  are unchanged and still run either way.
+
+## v4.16.0 — 2026-08-14 — review findings get verified in both directions
+
+### Added
+
+- **Step 6c now requires reproducing a blocking finding before fixing it.**
+  Previously a finding that was "clear, safe, and in scope" went straight to
+  `Edit` → commit → push. But a reviewer asserting a defect is making a claim
+  about runtime, and this skill already refuses to accept those on authority
+  when *declining* — accepting one on authority when *fixing* is the same error
+  pointed the other way, and it costs a commit plus a re-fired review round to
+  discover the code was already correct. A finding that cannot be reproduced is
+  not blocking: it drops to the refuted branch, with the failed reproduction as
+  its evidence.
+- **Refuting a finding now requires checking its source of truth first**, and
+  putting that evidence in the reply — the schema excerpt, the spec, the file's
+  current contents. A bare "this is incorrect" trades an opinion for an
+  opinion, and reviewers are right often enough that a reflexive decline
+  eventually declines a real bug. Evidence in the thread is also checkable by a
+  human reading it later, which an assertion is not.
+
+## v4.15.1 — 2026-08-14 — merge gets the pre-flight guards back
+
+### Fixed
+
+- **`merge` Step 0.5, guards.** `merge` was the only skill in this plugin with
+  no pre-flight checks — `branch-agent`, `commit-agent`, `pr-agent`, `ship`,
+  and `ship-autonomous` all have them. It now runs three before touching the
+  PR:
+  - **Detached HEAD.** Step 1's fallback interpolates `git branch
+    --show-current` into `gh pr list --head`, so on a detached HEAD it queried
+    `--head ""` and matched nothing — reported as "no PR found" rather than as
+    the checkout problem it was.
+  - **`gh auth status`.** An auth failure surfaced as whatever `gh pr view`
+    happened to print, several steps in.
+  - **Dirty working tree.** This is the guard v4.15.0 dropped alongside the
+    lint gate. It returns with a different purpose: not to align the local tree
+    with the PR head for a local lint run, but to name uncommitted files before
+    the Step 3 approval, so nobody approves a merge believing work is shipping
+    that is not in the PR. It **asks** rather than stopping — the merge is
+    server-side, so local edits cannot corrupt it.
+- **`agent-merge`** follows Steps 0.5–3 instead of 1–3. The dirty-tree ask
+  needs no special case there: the existing "if the skill says ask, report and
+  STOP" substitution already covers it.
+
 ## v4.15.0 — 2026-08-11 — the merge lint gate is gone
 
 ### Removed

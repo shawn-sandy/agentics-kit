@@ -1,6 +1,116 @@
 # Changelog
 
 
+## 9.4.1 — plan-status carries the plan-mode guard (2026-08-14)
+
+### Fixed
+
+- **`plan-status` exits plan mode before writing** — the skill's Step 7 writes
+  lifecycle status and dates into a plan's YAML frontmatter with `Edit`, but it
+  carried no guard, so invoking it inside plan mode blocked that write and
+  stalled the workflow. It now carries the canonical line as its first step and
+  declares `ToolSearch` and `ExitPlanMode` in `allowed-tools`.
+- **`commands/plan-status.md` mirrors the new tools** — the command reads the
+  SKILL.md by path and runs its steps inline under its own permissions, so the
+  skill's `allowed-tools` has to be a subset of the command's.
+- **Regression guard** — `plan-agent/skills/plan-status/SKILL.md` is now in the
+  `WRITE_HEAVY` manifest of `tests/plugins/test-exitplanmode-guard.sh`.
+
+
+## 9.4.0 — a deterministic render check replaces the grep drift gate (2026-08-14)
+
+### Added
+
+- **`plan-agent-render --check`** — verifies instead of writing. Three rows,
+  always printed in the same order: `html` compares the file on disk against a
+  fresh in-memory render and names the first differing line, column, and a
+  40-character window of each side; `steps` and `criteria` read the spec's
+  `[x]` and `- [x]` markers. Exit 0 only when nothing fails. Writes no files.
+- **Consistency is gated on `status: completed`** — below that, the `steps` and
+  `criteria` rows report `SKIP`, not `PASS`. A todo plan with unchecked steps
+  is in its correct state, so asserting completeness there would fail every
+  live plan.
+- **Actionable failures** — a missing HTML file reports the exact
+  `plan-agent-render … -o …` command that produces it rather than throwing, and
+  an unchecked item is quoted verbatim so the offending step or criterion is
+  identifiable without opening the spec.
+
+### Changed
+
+- **`build` Step 5.3 is one command instead of five CSS selectors.** The gate
+  used to say "confirm the HTML matches the spec" and then name `.step-card`,
+  criteria `checked` inputs, the three status representations, cc1–cc3, and
+  `all-complete` as the evidence — with no mechanism for evaluating any of
+  them. Handed selector names and no tool, the reader reached for `Grep`, which
+  searches source markup rather than evaluating a selector: a selector defined
+  in the stylesheet counted as a match, and a class the renderer emits
+  conditionally did not. Both directions produced false drift and a wasted
+  second verification pass. The selector paragraph is deleted, not merely
+  supplemented, so there is nothing to fall back to.
+- **`finalize-plan` Step 5e runs the same check**, keeping the two gates
+  consistent as `completion-gates.md` instructs. Legacy mode — the HTML
+  attribute surgery for plans that have no `.md` spec — still names the
+  elements it edits, because those are edit targets rather than drift evidence.
+
+### Why
+
+The check was aimed at the wrong artifact. The HTML is *derived* from the spec
+by a deterministic function this repo owns, so "is the HTML current?" is a
+build-freshness question answered by one byte comparison, and "is a completed
+spec internally consistent?" is a Markdown question that never needed the HTML
+at all. Neither requires reading rendered markup.
+
+Determinism was measured, not assumed: rendering an unchanged spec repeatedly
+over one output path is byte-identical, and `plan-file`/`plan-path` are the
+only fields that vary with the output path. They are deliberately **not**
+normalized away — a comparison blind to them would pass an HTML file copied in
+from another location, which is one of the stale states the check exists to
+catch.
+
+
+## 9.3.0 — build-fleet: ship a plan backlog in parallel (2026-08-14)
+
+### Added
+
+- **`build-fleet` skill** — `build` fanned out. `build` ships one plan on the
+  current branch; `build-fleet` ships N plans on N branches, one subagent per
+  plan. Command (`/plan-agent:build-fleet [<plan> ...] [--dir <path>]
+  [--max N]`) or model-invocable on "ship the backlog in parallel" intent.
+- **Dispatch-only by construction** — every step of the work is delegated to
+  `plan-agent:build` and `git-agent:ship-autonomous` rather than restated, so
+  the completion gates, browser verification, CI autofix, and review triage are
+  inherited when those skills change.
+- **Worktree isolation via the harness** — each agent runs with
+  `isolation: "worktree"`, which creates the worktree and removes it if left
+  unchanged. No `git worktree add` and no cleanup pass to get wrong.
+- **Plan picker** — the fleet is chosen, not just approved: one `multiSelect`
+  `AskUserQuestion` over the newest four candidates (`build`'s discovery sort),
+  stating how many were suppressed. The ticked boxes are themselves the
+  confirmation, because the question states that each selection opens one pull
+  request — a second confirm-the-count question would ask about something the
+  user just enumerated by hand. A deeper backlog ships a batch per run, a
+  selection over `--max` trims to the newest and says what it dropped, and an
+  explicit plan list skips the picker entirely.
+- **Blast-radius guards** — a mandatory confirmation that names how many pull
+  requests will open, `--max` defaulting to 3, `status: completed` plans
+  excluded even when named explicitly, a dirty-tree stop (worktrees fork from
+  the base branch, so uncommitted parent-tree work does not travel), and a
+  headless run that cancels instead of defaulting.
+- **Resolved base branch, never a hardcoded `main`** — Step 1 reads
+  `git symbolic-ref --short refs/remotes/origin/HEAD` and carries the value
+  into every agent prompt; an unset `origin/HEAD` asks rather than guessing.
+  Caught by driving the skill against a `master`-only repo, where the earlier
+  hardcoded `origin/main` killed all five agents on line 1 of their prompts.
+- **`todo`-only discovery, documented as deliberate** — `build` also accepts
+  `in-progress`; the fleet does not, because such a plan usually already has a
+  branch and a half-finished tree that a second worktree would redo. Name it
+  explicitly to override.
+- **Stops at green** — the fleet ends at green PRs. A background agent cannot
+  answer `ship-autonomous`'s merge gate, and auto-merging N sibling PRs is the
+  one step in the chain with no cheap undo, so merging stays a human step via
+  `/git-agent:merge`.
+
+
 ## 9.2.0 — build-feature: feature docs that split into plans (2026-08-12)
 
 ### Added
