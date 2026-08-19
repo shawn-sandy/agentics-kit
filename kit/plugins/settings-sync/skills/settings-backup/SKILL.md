@@ -1,7 +1,7 @@
 ---
 name: settings-backup
 description: "Backs up Claude Code user settings to a git repo. Commits and pushes config files unattended; routine-compatible. Use when the user asks to back up or sync their Claude Code settings."
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, ToolSearch, ExitPlanMode
 argument-hint: "[repo-path]"
 ---
 
@@ -22,6 +22,10 @@ Load `references/file-manifest.md` from the plugin root for the complete list
 of files to back up, opt-in targets, and exclusions.
 
 ## Steps
+
+### Step 0 — Exit plan mode
+
+**If in plan mode**, call `ExitPlanMode` first — this workflow mutates state.
 
 ### Step 1 — Resolve the backup repo path
 
@@ -104,28 +108,35 @@ Build the list of sources from the file manifest:
 For each source, check if it exists before attempting to copy. Track which
 sources were found and which were skipped.
 
-### Step 4 — Secret scan (first backup only)
+### Step 4 — Secret scan (every backup)
 
-If the repo has no prior commits (`git -C <repo-path> log --oneline -1` fails),
-this is the first backup. Read `~/.claude/settings.json` and scan its content
-for common secret patterns:
+Run this scan on **every** backup, not just the first. A token added to
+`settings.json` (or a hook script) after the initial commit would otherwise be
+pushed unattended on every subsequent routine run with no scan and no warning.
+The scan is a fast grep over a handful of text files — the cost is negligible.
 
-- `sk-` (API keys)
-- `ghp_` (GitHub tokens)
-- `ghs_` (GitHub tokens)
+Scan every source in the Step 3 file list (files directly, directories
+recursively) for common secret patterns:
+
+- `sk-` (API keys — covers `sk-ant-…` Anthropic keys and `sk_live_` Stripe keys)
+- `ghp_`, `ghs_`, `gho_`, `github_pat_` (GitHub tokens)
+- `glpat-` (GitLab tokens)
 - `AKIA` (AWS access keys)
+- `AIza` (Google API keys)
 - `xoxb-`, `xoxp-` (Slack tokens)
+- `hooks.slack.com/services/` (Slack webhook URLs)
 - Strings that look like base64-encoded secrets (40+ chars of `[A-Za-z0-9+/=]`)
 
 If any matches are found, warn the user:
 
-> "Found potential secrets in settings.json (patterns: sk-, ghp_). If this
+> "Found potential secrets in <file> (patterns: sk-, ghp_). If this
 > repo has a public remote, these could be exposed. Continue with backup?"
 
-Use `AskUserQuestion` with options: "Continue", "Skip settings.json",
+Use `AskUserQuestion` with options: "Continue", "Skip the flagged files",
 "Cancel backup". **In routine mode** (no interactive prompts), log the warning
-to `.sync-log` but continue — the user accepted the risk by scheduling the
-routine.
+to `.sync-log` **with the matched pattern and file path** so the exposure is
+discoverable later, then continue — the user accepted the risk by scheduling
+the routine.
 
 ### Step 5 — Copy files to the repo
 
