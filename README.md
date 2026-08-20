@@ -35,6 +35,7 @@ A **marketplace system for Claude Code plugins** — enabling discovery, distrib
   - [Accessibility & Performance](#accessibility--performance)
   - [Plugin Development](#plugin-development)
   - [Productivity](#productivity)
+- [How-To Guides](#how-to-guides)
 - [Plugin Reference Table](#plugin-reference-table)
 - [Removed Plugins](#removed-plugins)
 - [Contributing](#contributing)
@@ -778,21 +779,44 @@ claude --plugin-dir ./kit/plugins/team-defaults
 
 ---
 
+## How-To Guides
+
+One brief "How do I" entry per skill: the slash command to type, the plain-English phrasing that triggers it, what it actually does, and the gotcha worth knowing. Skills marked command-only cannot be triggered by natural language.
+
+| Plugin | Guide | Skills |
+|--------|-------|--------|
+| artifact-tools | [How do I... artifact-tools](./docs/guides/how-to/artifact-tools.md) | 5 |
+| code-review | [How do I... code-review](./docs/guides/how-to/code-review.md) | 1 |
+| code-testing-agent | [How do I... code-testing-agent](./docs/guides/how-to/code-testing-agent.md) | 5 |
+| content-tools | [How do I... content-tools](./docs/guides/how-to/content-tools.md) | 1 |
+| git-agent | [How do I... git-agent](./docs/guides/how-to/git-agent.md) | 8 |
+| memory-tools | [How do I... memory-tools](./docs/guides/how-to/memory-tools.md) | 3 |
+| plan-agent | [How do I... plan-agent](./docs/guides/how-to/plan-agent.md) | 16 |
+| settings-sync | [How do I... settings-sync](./docs/guides/how-to/settings-sync.md) | 2 |
+| skill-reviewer | [How do I... skill-reviewer](./docs/guides/how-to/skill-reviewer.md) | 4 |
+| social-media-tools | [How do I... social-media-tools](./docs/guides/how-to/social-media-tools.md) | 17 |
+| team-defaults | [How do I... team-defaults](./docs/guides/how-to/team-defaults.md) | 1 |
+| wcag-compliance-reviewer | [How do I... wcag-compliance-reviewer](./docs/guides/how-to/wcag-compliance-reviewer.md) | 1 |
+
+Total: 64 skills across 12 plugins.
+
+---
+
 ## Plugin Reference Table
 
 > Versions live here only — the per-plugin sections above deliberately omit them so there is one place to update.
 
 | Plugin | Version | Category | Components |
 |--------|---------|----------|------------|
-| [memory-tools](./kit/plugins/memory-tools/README.md) | 4.1.1 | development | 2 skills |
+| [memory-tools](./kit/plugins/memory-tools/README.md) | 4.3.0 | development | 3 skills |
 | [code-review](./kit/plugins/code-review/README.md) | 3.3.4 | development | 1 command, 1 skill, 1 agent |
 | [wcag-compliance-reviewer](./kit/plugins/wcag-compliance-reviewer/README.md) | 1.5.2 | security | 1 skill |
 | [skill-reviewer](./kit/plugins/skill-reviewer/README.md) | 2.5.2 | development | 1 command, 4 skills, 1 hook |
 | [code-testing-agent](./kit/plugins/code-testing-agent/README.md) | 3.5.2 | testing | 5 skills |
-| [git-agent](./kit/plugins/git-agent/README.md) | 4.19.2 | development | 5 commands, 8 skills, 5 agents, 3 hooks |
+| [git-agent](./kit/plugins/git-agent/README.md) | 4.19.3 | development | 5 commands, 8 skills, 5 agents, 3 hooks |
 | [settings-sync](./kit/plugins/settings-sync/README.md) | 1.1.4 | productivity | 2 skills |
 | [social-media-tools](./kit/plugins/social-media-tools/README.md) | 2.23.4 | productivity | 1 command, 17 skills |
-| [plan-agent](./kit/plugins/plan-agent/README.md) | 9.4.7 | productivity | 9 commands, 16 skills, 12 agents, 2 hooks |
+| [plan-agent](./kit/plugins/plan-agent/README.md) | 9.4.8 | productivity | 9 commands, 16 skills, 12 agents, 2 hooks |
 | [team-defaults](./kit/plugins/team-defaults/README.md) | 0.2.2 | productivity | 1 skill, 2 agents |
 | [artifact-tools](./kit/plugins/artifact-tools/README.md) | 1.12.0 | development | 3 commands, 5 skills |
 | [content-tools](./kit/plugins/content-tools/README.md) | 1.1.1 | documentation | 1 skill |

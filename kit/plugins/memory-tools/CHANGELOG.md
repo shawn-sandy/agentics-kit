@@ -1,5 +1,39 @@
 # Changelog
 
+## v4.3.0 — 2026-08-20 — implementing-insights discovers repos on its own
+
+### Changed
+
+- **`implementing-insights` now resolves target repos discover-first, ask-last.**
+  Step 3 previously asked the user for a path the moment a repo named in a
+  finding was not immediately found. It now builds a repo inventory from
+  `~/.claude/projects/` (the same usage data the insights report is generated
+  from, so every repo the report can name has a slug there), filters out
+  session-worktree slugs, verifies each match is a real git checkout, and only
+  falls back to asking the user to point at their projects directory when a
+  repo still cannot be resolved. No machine-specific layout is assumed — the
+  inventory is rebuilt from scratch on every run, so the skill works for any
+  plugin user, not just this machine.
+- **Workflow-shaped items fall back to `~/.claude/` for users without their own
+  plugin repo.** The layer-placement step assumed every user maintains a
+  personal plugin repo; when none exists, those items now route to the
+  machine-wide `~/.claude/` layer as the next-best fit.
+
+## v4.2.0 — 2026-08-19 — usage-insights follow-through
+
+### Added
+
+- **New skill `implementing-insights`** — takes a Claude Code usage-insights
+  report, triages every recommendation against the config that already exists
+  (`~/.claude/`, installed plugins, each target repo), and implements only the
+  genuinely open items — each at the correct config layer (plugin / user-global
+  / repo), one PR per change, with worktree isolation for parallel agents and a
+  verified outcome ledger at the end. Encodes the triage-before-implement
+  workflow from the 2026-08-19 usage-insights session: insights reports repeat
+  themselves, so already-implemented and rule-conflicting suggestions are cited
+  and skipped, never re-implemented. Promoted from a personal skill into the
+  plugin so it is versioned and synced across machines.
+
 ## v4.1.1 — 2026-08-17 — the write gate actually runs
 
 ### Fixed
