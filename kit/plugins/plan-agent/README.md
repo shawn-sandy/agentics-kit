@@ -12,7 +12,7 @@ The `review-plan` skill uses an **Agent Team** (seven core reviewers plus three 
 
 The `finalize-plan` skill reviews a plan for codebase implementation evidence, verifies each acceptance criterion individually, and marks the plan completed.
 
-It also ships two `PostToolUse` hooks: one enforces `verb-target` kebab-case filenames on plan files, and another auto-regenerates the plans gallery index when plans change.
+It also ships two `PostToolUse` registrations: a `Write`/`Edit`/`MultiEdit` dispatcher that path-gates once and fans out to seven child hooks — `verb-target` kebab-case filename enforcement, plan HTML re-render, the plans, prototypes, and designs gallery rebuilds, and the prototype and design drift checks — plus an `ExitPlanMode` nudge to stress-test a plan before implementing.
 
 Installers get on-demand planning with argument support, issue ingestion, built-in interviews, acceptance criteria verification, agent-team–powered review, and filename guardrails without maintaining a global `~/.claude/rules/plan-mode.md` file by hand.
 
@@ -37,9 +37,10 @@ Installers get on-demand planning with argument support, issue ingestion, built-
 | `prototype` | Skill | Command (`/plan-agent:prototype <plan.html \| idea \| image \| figma-url>`) or auto-activates on "prototype this plan / idea / screenshot" intent — generates a runnable static-HTML prototype under `docs/prototypes/` |
 | `design` | Skill | Command (`/plan-agent:design <plan.html \| idea \| image \| figma-url>`) or auto-activates on "design this plan" intent — derives one artboard per user-facing plan step under `docs/designs/<plan-slug>/` and publishes the canvas through Claude Code's built-in `design` skill |
 | `publish-hub` | Skill | Command (`/plan-agent:publish-hub <plan.md> [--extra <path>]...`) or auto-activates on "publish / share a plan hub" intent — bundles the plan and its related HTML (prototype, extras) into one tabbed hub artifact at a stable `hub-artifact-url:` |
-| `dispatch` | Hook (`PostToolUse`) | The plugin's only registered hook. Fires on `Write`/`Edit`/`MultiEdit`, path-gates once, and fans out to the six below only for plan/prototype/design writes |
+| `dispatch` | Hook (`PostToolUse`) | The plugin's only registered Write/Edit hook. Fires on `Write`/`Edit`/`MultiEdit`, path-gates once, and fans out to the seven below only for plan/prototype/design writes |
 | `validate-plan-filename` | Child of `dispatch` | Validates plan filenames; exits 2 to block a badly-named plan |
 | `rebuild-plans-index` | Child of `dispatch` | Regenerates the plans gallery for non-index `.html` plans |
+| `render-plan-html` | Child of `dispatch` | Re-renders `<stem>.html` beside a Markdown plan spec when that sibling already exists |
 | `build-prototypes-index` | Child of `dispatch` | Regenerates the prototypes gallery for `docs/prototypes/` writes |
 | `check-prototype-drift` | Child of `dispatch` | Reports when a prototype has drifted from its own data model or its plan's copy |
 | `build-designs-index` | Child of `dispatch` | Regenerates the designs gallery for `docs/designs/` writes |
@@ -304,6 +305,8 @@ When invoked without arguments, prompts for the plan file. The skill:
 
 **Artifact-published plans are first-class.** Since the local `.html` became a `--file` opt-in, a spec with an `artifact-url:` and no sibling *is* the ordinary shape of a plan — so the skills that consume one after it is authored take it too. `review-plan` finds artifact plans in its default discovery (a `.html` glob alone cannot see them, and would silently review a stale file-published plan instead), accepts an explicit `.md` spec path, and routes its Step 7 re-render to the scratchpad plus a republish rather than writing the sibling. `design` and `prototype` classify a `.md` first token as a plan path; before this it fell through to their "raw idea" branch, so the skill ran to completion having designed against a filename.
 
+**Reconciles the plan against what shipped.** Steps 3a–3c only ever asked whether each *planned* thing was built. Step 3d asks the other direction — what got built that the plan never mentions. It takes the commits that touched the spec (falling back to the default-branch range when the spec commit has not landed yet), diffs their changed paths against `## Files` and the step tokens, and sorts the remainder into two buckets: work **shipped but unplanned**, and work **built differently** from the plan. Unplanned work is appended to `## Steps` as an already-done `Unplanned:` step, so the step list stays the honest record of what was built; a changed approach becomes a `## Decisions` bullet, the ledger a resumed session reads so it does not re-litigate a settled choice. Neither goes in the `## Completion Report` — every entry there renders with a red dot, and work that shipped fine is not a defect. Without 3d a plan is marked completed while its published artifact still describes only the scope someone imagined before the work started.
+
 **Artifact-published plans stay current.** A plan published to claude.ai is a spec with an `artifact-url:` and no sibling `<stem>.html`; that missing sibling is the signal the render hook uses to skip it. So every skill that writes completion state — `finalize-plan`, `build`, and `plan-status` (single file and bulk) — re-renders to the scratchpad and **republishes to the recorded `artifact-url:`**, updating the existing page rather than claiming a second one. Without it the spec reads `completed` while the page everyone else opens still reads `todo`. The sibling `<stem>.html` is never written for these plans: it resurrects the file the author chose not to publish and flips the plan's gallery card off the artifact onto a local path.
 
 ####  `prompt` — Manual invoke only
@@ -516,7 +519,7 @@ Like every other child it **always exits 0**: a coverage report about one plan n
 
 #### Hook dispatch
 
-`hooks.json` registers exactly one PostToolUse hook: `hooks/dispatch.py`. Registering the four hooks separately spawned four interpreters on *every* file edit in *every* session, purely so each could discover the file was not a plan and exit. The `matcher` field is a tool-name regex and cannot express a path condition, so the gate lives in `dispatch.py`: it reads the payload once, does one cheap path check, and for the common case exits without spawning anything.
+`hooks.json` registers two PostToolUse hooks: the `Write`/`Edit`/`MultiEdit` dispatcher at `hooks/dispatch.py`, and an `ExitPlanMode` stress-test nudge. Registering the dispatcher's seven children separately spawned seven interpreters on *every* file edit in *every* session, purely so each could discover the file was not a plan and exit. The `matcher` field is a tool-name regex and cannot express a path condition, so the gate lives in `dispatch.py`: it reads the payload once, does one cheap path check, and for the common case exits without spawning anything.
 
 The children remain independently runnable and testable — each re-applies its own filter — so `python3 hooks/validate-plan-filename.py < payload.json` still works standalone. The children share the dispatcher's single 60s budget (they run sequentially), rather than each holding an independent one as before.
 
@@ -632,11 +635,11 @@ plan-agent/
       hub.html              — Parameterized landing-hub template (setup-sites)
       serve-docs.sh         — Local docs/ preview server (setup-sites)
   hooks/
-    dispatch.py                — The one registered PostToolUse hook; path-gates, then fans out
+    dispatch.py                — The registered Write/Edit hook; path-gates, then fans out to seven children
     validate-plan-filename.py  — Filename enforcement script (child of dispatch)
     rebuild-plans-index.py     — Gallery index auto-rebuild (child of dispatch)
     build-index.sh             — Shell entry point for gallery rebuild
-  hooks.json                — Hook registration (one PostToolUse entry: dispatch.py)
+  hooks.json                — Hook registration (two PostToolUse entries: dispatch.py, ExitPlanMode nudge)
   README.md
   CHANGELOG.md
 ```

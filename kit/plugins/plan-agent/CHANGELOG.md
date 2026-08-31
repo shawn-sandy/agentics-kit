@@ -1,5 +1,105 @@
 # Changelog
 
+## 9.11.0 — finalize-plan reconciles the plan against what shipped (2026-08-30)
+
+### Added
+
+- **`finalize-plan` Step 3d reconciles the plan against the shipped commits.**
+  Steps 3a–3c only ever asked one direction of the question — *was each planned
+  thing built?* — so a plan whose implementation grew a file, a flag, or a
+  different approach was marked completed while its published artifact still
+  described only the scope imagined before the work started. 3d asks the other
+  direction. It takes the commits that touched the spec (`git log --follow`,
+  precise because plans are committed alongside the change they describe),
+  falls back to the default-branch range when the spec commit has not landed yet,
+  and sorts the changed paths against `## Files` and the 3a tokens into two new
+  buckets: **shipped but unplanned** and **built differently**. Housekeeping
+  paths — the spec itself, generated indexes, lockfiles, version bumps — are
+  excluded, since they ship with every plan and say nothing about scope. 3d
+  only observes; the buckets are reported in Step 4 before the user confirms.
+- **`5c2` writes unplanned shipped work into `## Steps`** as an already-done
+  `Unplanned: <what> — <why>` step. The step list is what a reader treats as
+  the record of what was built, so work kept only in prose leaves the rendered
+  plan under-reporting the change. In a phased spec these land under a trailing
+  `### Phase: Unplanned` rather than at the end of the list, where they would
+  drop into a phase that was never started and muddy 5a0's
+  completable-versus-checkpointed gate; every step in that phase is `[x]`, so
+  the gate ignores it. Runs even when the phase gate skipped 5c.
+- **`5d2` writes a changed approach into `## Decisions`** — the settled-choices
+  ledger a resumed session already reads so it does not re-litigate a closed
+  question. Deliberately not the `## Completion Report`: every entry there
+  renders with a red dot (`.report-list dt::before`), and work that shipped
+  fine is not a defect.
+
+### Fixed
+
+- **5d's removal rule is now scoped to its own section.** "If every criterion
+  was verified, remove the Completion Report and add nothing" described exactly
+  the state a clean run with extra scope lands in, so the happy path was
+  precisely where reconcile output would have been discarded.
+
+### Notes
+
+- No renderer change. All four reconcile buckets route to sections
+  `build-plan-html.mjs` already parses, renders, and round-trips — a new
+  `## What Shipped` section would have cost parse, render, digest,
+  `extractSections`, and CSS, and the parser silently drops sections it does
+  not know.
+## 9.10.2 — hook count in the README matches dispatch.py (2026-08-30)
+
+### Fixed
+
+The plugin README's component table said `dispatch` "fans out to the six below"
+and listed six children. `dispatch.py` fans out to seven: `render-plan-html` was
+missing from the list, so the plugin README contradicted the root README, which
+has said "all seven Write/Edit hooks" since the renderer hook landed. Added the
+missing row and corrected the count.
+
+The same table called `dispatch` "the plugin's only registered hook", which
+contradicts this README's own hook inventory further down — `hooks.json`
+registers two PostToolUse entries, the `Write|Edit|MultiEdit` dispatcher and the
+`ExitPlanMode` stress-test nudge. It is the only registered *Write/Edit* hook;
+the row now says so.
+
+`dispatch.py`'s own module docstring had drifted the same way: it said "six
+PostToolUse hooks" while the parenthetical immediately after it enumerated
+seven. Docs only — no behaviour change.
+
+The README's overview paragraph had drifted the same way in the other direction:
+it said the plugin "ships two `PostToolUse` hooks" and then named filename
+validation and the plans-index rebuild — the right count attached to the wrong
+two. Those are children of `dispatch`; the two registrations in `hooks.json` are
+the `Write|Edit|MultiEdit` dispatcher and the `ExitPlanMode` nudge. It now
+describes the real shape.
+
+Three more spots carried the same wrong count: the "Hook dispatch" section said
+`hooks.json` registers "exactly one PostToolUse hook" and that registering "the
+four hooks" separately spawned four interpreters (it is seven children under two
+registrations), and the repository-layout tree repeated the one-registration
+claim twice. All now match `hooks.json`.
+
+
+## 9.10.1 — the build completion gate stops failing artifact-only plans (2026-08-25)
+
+### Fixed
+
+- **`scripts/build-plan-html.mjs` creates missing `-o` parent directories.**
+  Both the `build` and `finalize-plan` references render an artifact-delivered
+  plan to `"$SCRATCHPAD/<stem>.html"`, and `<stem>` always carries directories
+  (`docs/plans/foo`), so the documented command died on an unhandled `ENOENT`
+  stack trace before writing a byte — the artifact re-render recipe could not
+  be run as written. `--check` still writes nothing, directories included.
+- **`skills/build/references/completion-gates.md` Step 5.3 now points `--check`
+  at the scratchpad render for an artifact-delivered plan.** The command was
+  hardcoded to `-o "<stem>.html"`, which an artifact-only plan does not have —
+  so every such plan failed its own completion gate on a spec whose `steps` and
+  `criteria` rows both passed. Worse, the `html` row's remediation line names
+  the one command `references/re-render.md` forbids: writing the sibling
+  resurrects a file the author chose not to publish, and `build-index.sh` gives
+  a sibling priority over the URL, so the plan's gallery card silently flips off
+  the shared artifact onto a local path. `finalize-plan`'s
+  `references/write-completions.md` already carried this carve-out; the two are
+  meant to stay consistent and had drifted.
 ## 9.10.0 — artifact-published plans reach review, design, and prototype (2026-08-28)
 
 ### Fixed
