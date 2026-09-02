@@ -4,7 +4,7 @@
 
 A **marketplace system for Claude Code plugins** — enabling discovery, distribution, and installation of AI-powered plugins that extend Claude's capabilities across code review, planning, testing, git workflows, accessibility, and more.
 
-**Marketplace:** `agentics-kit` v4.0.0 · **12 plugins** · Requires Claude Code 1.0.33+ · [View all plugins](#plugin-reference-table) · [Browse docs](https://shawn-sandy.github.io/agentics/)
+**Marketplace:** `agentics-kit` v4.0.0 · **11 plugins** · Requires Claude Code 1.0.33+ · [View all plugins](#plugin-reference-table) · [Browse docs](https://shawn-sandy.github.io/agentics/)
 
 > **Breaking change — v4.0.0:** Six plugins have been removed from the marketplace: `agent-creator`, `agent-reviewer`, `agentic-plugin-dev`, `code-simplifier`, `marketplace-builder`, and `react-perf-analyzer`. Their source directories have been removed from the repository and are recoverable from git history at the commit preceding their deletion. See [CHANGELOG.md](./CHANGELOG.md) for details.
 
@@ -84,7 +84,7 @@ The agentics project serves two purposes:
 
 | Purpose | What it contains |
 |---------|-----------------|
-| **Active Plugins** | 12 marketplace plugins in `kit/plugins/` — installable via `/plugin install`, covering code review, planning, testing, git workflows, accessibility, and more |
+| **Active Plugins** | 11 marketplace plugins in `kit/plugins/` — installable via `/plugin install`, covering code review, planning, testing, git workflows, accessibility, and more |
 | **Marketplace Infrastructure** | `agentics-kit` marketplace manifest (`marketplace.json`) that enables installation via `/plugin install` |
 
 Every plugin in this repo is a working, production-quality tool you can install and use immediately.
@@ -762,7 +762,9 @@ claude --plugin-dir ./kit/plugins/content-tools
 
 ## How-To Guides
 
-One brief "How do I" entry per skill: the slash command to type, the plain-English phrasing that triggers it, what it actually does, and the gotcha worth knowing. Skills marked command-only cannot be triggered by natural language.
+One brief "How do I" entry per skill: the slash command to type, the plain-English phrasing that triggers it, what it actually does, and the gotcha worth knowing. Skills marked command-only cannot be triggered by natural language — they carry `disable-model-invocation: true`.
+
+Start at the [how-to index](./docs/guides/how-to/README.md), or jump straight to a plugin:
 
 | Plugin | Guide | Skills |
 |--------|-------|--------|
@@ -778,7 +780,7 @@ One brief "How do I" entry per skill: the slash command to type, the plain-Engli
 | social-media-tools | [How do I... social-media-tools](./docs/guides/how-to/social-media-tools.md) | 17 |
 | wcag-compliance-reviewer | [How do I... wcag-compliance-reviewer](./docs/guides/how-to/wcag-compliance-reviewer.md) | 1 |
 
-Total: 66 skills across 11 plugins.
+Total: 66 skills across 11 plugins — 12 of them command-only.
 
 ---
 

@@ -6,7 +6,7 @@ Automated git workflow for Claude Code — branch creation, commits, PRs, ship p
 
 ### Skills (foreground)
 
-- **branch-agent** — Fetches latest from origin, creates a branch from the default branch with no upstream tracking, and switches to it. Accepts a branch name or a descriptive phrase — descriptive names are auto-slugified into readable, whole-word slugs (e.g. `"add login page"` → `add-login-page`, max 60 chars; long names drop trailing words rather than abbreviating). Auto-generated names read like commit subjects (e.g. `feat/add-login-form-validation`). Always appends a `-YYYY-MM-DD` date suffix to the final branch name (e.g. `feat/login-fix-2026-04-17`). Stops immediately after. Auto-activates on intent match.
+- **branch-agent** — Fetches latest from origin, creates a branch from the default branch with no upstream tracking, and switches to it. Accepts a branch name or a descriptive phrase — descriptive names are auto-slugified into readable, whole-word slugs (e.g. `"add login page"` → `add-login-page`, max 60 chars; long names drop trailing words rather than abbreviating). Auto-generated names read like commit subjects (e.g. `feat/add-login-form-validation`). Always appends a `-YYYY-MM-DD` date suffix to the final branch name (e.g. `feat/login-fix-2026-04-17`). Stops immediately after. Manual invoke only — does not auto-activate on intent match.
 - **commit-agent** — Stages all changes, writes a conventional commit message, commits, then asks whether to push. Manual invoke only — does not auto-activate on intent match.
 - **pr-agent** — Detects the base branch, pushes if needed, checks for an existing PR, and creates one via `gh`. Stops immediately after. Manual invoke only — does not auto-activate on intent match.
 - **ship** — Stages, commits, pushes, and creates a PR in one flow. Manual invoke only — does not auto-activate on intent match. Use commit-agent or pr-agent for individual steps.
@@ -56,7 +56,7 @@ claude --plugin-dir ./kit/plugins/git-agent
 
 | Skill | Activation | Trigger |
 |---|---|---|
-| `branch-agent` | Auto-activated | "create a new branch", "start a branch", "branch off main", "make a fresh branch" |
+| `branch-agent` | Manual invoke only — use `/git-agent:branch-agent` explicitly | "create a new branch", "start a branch", "branch off main", "make a fresh branch" |
 | `commit-agent` | Manual invoke only — use `/git-agent:commit-agent` explicitly | "commit my changes", "stage and commit", "commit all changes" |
 | `pr-agent` | Manual invoke only — use `/git-agent:pr-agent` explicitly | "create a PR", "open a pull request", "make a PR", "push and create PR" |
 | `ship` | Manual invoke only — use `/git-agent:ship` explicitly | "ship it", "commit and create a PR", "ship my changes", "send it", "land my work" |
@@ -81,7 +81,10 @@ Agents are background subagents dispatched via the corresponding slash commands 
 
 ### branch-agent
 
-Auto-activates when you say any of:
+**Manual invoke only** (`disable-model-invocation: true`) — does not respond to
+natural-language intent matching. Invoke explicitly with
+`/git-agent:branch-agent [branch-name]`. The phrasings below describe the
+argument it accepts, not triggers:
 - "create a new branch called feat/login-fix"
 - "start a branch for dark mode"
 - "branch off main for this feature"
